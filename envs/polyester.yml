@@ -1,0 +1,9 @@
+channels:
+ - conda-forge
+ - bioconda
+ - defaults
+dependencies:
+ - bioconductor-rtracklayer=1.52.0 
+ - bioconductor-bsgenome=1.60.0 
+ - bioconductor-biostrings=2.60.0 
+ - bioconductor-polyester=1.28.0 

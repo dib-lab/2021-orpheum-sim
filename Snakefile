@@ -2,6 +2,7 @@ import pandas as pd
 
 refseq = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t", header = 0)
 ACC = metadata['assembly_accession'].to_list()
+SET = ['cds', 'noncds']
 
 ORPHEUM_DB = ["gtdb-rs202"]
 # set constrained k sizes
@@ -121,4 +122,40 @@ rule extract_noncds_from_genome:
     conda: "envs/bedtools.yml"
     shell:'''
     bedtools getfasta -fi {input.fna} -bed {input.bed} -name -s > {output}
+    '''
+
+rule polyester_simulate_reads:
+    input: fasta = "outputs/{set}_fasta/{acc}_set.fasta"
+    output: "outputs/polyester/{acc}_{set}/sample_01.fasta.gz"
+    params:
+        outdir = lambda wildcards: "outputs/polyester/" + wildcards.acc + "_" + wildcards.set + "/",
+        num_reps = 1,
+        read_length = 150,
+        simulate_paired = False,
+        num_reads_per_transcript=100,
+    benchmark: os.path.join(logs_dir, "{samplename}.simreads.benchmark")
+    threads: 1
+    resources:
+      mem_mb=16000,
+      tmpdir=TMPDIR
+    conda: "envs/polyester.yml"
+    script: "scripts/polyester.R"
+
+# orpheum index cp'd over from @bluegenes 2021-rank-compare
+rule orpheum_translate_reads:
+    input: 
+        ref="inputs/orpheum_index/{orpheum_db}.{alphabet}-k{ksize}.nodegraph",
+        fasta="outputs/polyester/{acc}_{set}/sample_01.fasta.gz"
+    output:
+        pep="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.coding.faa",
+        nuc="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.nuc_coding.fna",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.nuc_noncoding.fna",
+        csv="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.coding_scores.csv",
+        json="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.summary.json"
+    conda: "envs/orpheum.yml"
+    benchmark: "benchmarks/orpheum-translate-{srr}-{orpheum_db}-{alphabet}-k{ksize}.txt"
+    resources:  mem_mb=500000
+    threads: 1
+    shell:'''
+    orpheum translate --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fasta} > {output.pep}
     '''
