@@ -1,14 +1,20 @@
 import pandas as pd
 
-refseq = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t", header = 0)
+metadata = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t", header = 0)
 ACC = metadata['assembly_accession'].to_list()
-SET = ['cds', 'noncds']
+SEQ = ['cds', 'noncds']
 
 ORPHEUM_DB = ["gtdb-rs202"]
-# set constrained k sizes
 #dayhoff_ksizes = [14, 16, 18]
 protein_ksizes = [10]
+ALPHA_KSIZE = expand('protein-k{k}', k=protein_ksizes)
 
+
+TMPDIR = "/scratch/tereiter/"
+
+rule all:
+    input:
+        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ)
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -125,15 +131,15 @@ rule extract_noncds_from_genome:
     '''
 
 rule polyester_simulate_reads:
-    input: fasta = "outputs/{set}_fasta/{acc}_set.fasta"
-    output: "outputs/polyester/{acc}_{set}/sample_01.fasta.gz"
+    input: fasta = "outputs/{seq}_fasta/{acc}_{seq}.fasta"
+    output: "outputs/polyester/{acc}_{seq}/sample_01.fasta.gz"
     params:
-        outdir = lambda wildcards: "outputs/polyester/" + wildcards.acc + "_" + wildcards.set + "/",
+        outdir = lambda wildcards: "outputs/polyester/" + wildcards.acc + "_" + wildcards.seq + "/",
         num_reps = 1,
         read_length = 150,
         simulate_paired = False,
         num_reads_per_transcript=100,
-    benchmark: os.path.join(logs_dir, "{samplename}.simreads.benchmark")
+    benchmark: "benchmarks/polyester-{acc}-{seq}.txt"
     threads: 1
     resources:
       mem_mb=16000,
@@ -145,15 +151,15 @@ rule polyester_simulate_reads:
 rule orpheum_translate_reads:
     input: 
         ref="inputs/orpheum_index/{orpheum_db}.{alphabet}-k{ksize}.nodegraph",
-        fasta="outputs/polyester/{acc}_{set}/sample_01.fasta.gz"
+        fasta="outputs/polyester/{acc}_{seq}/sample_01.fasta.gz"
     output:
-        pep="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.coding.faa",
-        nuc="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.nuc_coding.fna",
-        nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.nuc_noncoding.fna",
-        csv="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.coding_scores.csv",
-        json="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{set}.summary.json"
+        pep="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{seq}.coding.faa",
+        nuc="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{seq}.nuc_coding.fna",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{seq}.nuc_noncoding.fna",
+        csv="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{seq}.coding_scores.csv",
+        json="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{seq}.summary.json"
     conda: "envs/orpheum.yml"
-    benchmark: "benchmarks/orpheum-translate-{srr}-{orpheum_db}-{alphabet}-k{ksize}.txt"
+    benchmark: "benchmarks/orpheum-translate-{acc}-{seq}-{orpheum_db}-{alphabet}-k{ksize}.txt"
     resources:  mem_mb=500000
     threads: 1
     shell:'''
