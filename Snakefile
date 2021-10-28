@@ -24,9 +24,8 @@ rule download_assemblies:
         tmpdir=TMPDIR
     run:
         row = metadata.loc[metadata['assembly_accession'] == wildcards.acc]
-        assembly_ftp = row['ftp_path'].values
+        assembly_ftp = row['ftp_path_full_genome'].values
         assembly_ftp = assembly_ftp[0]
-        assembly_ftp = assembly_ftp + "/*genomic.fna.gz"
         shell("wget -O {output} {assembly_ftp}")
 
 rule gunzip_assemblies:
@@ -48,10 +47,9 @@ rule download_gff:
         tmpdir=TMPDIR
     run:
         row = metadata.loc[metadata['assembly_accession'] == wildcards.acc]
-        assembly_ftp = row['ftp_path'].values
-        assembly_ftp = assembly_ftp[0]
-        assembly_ftp = assembly_ftp + "/*genomic.gff.gz"
-        shell("wget -O {output} {assembly_ftp}")
+        gff_ftp = row['ftp_path_full_gff'].values
+        gff_ftp = gff_ftp[0]
+        shell("wget -O {output} {gff_ftp}")
 
 rule filter_gff_to_cds:
     input: gff="inputs/assemblies/{acc}_genomic.gff.gz",
