@@ -106,3 +106,54 @@ gtdb_rep_metadata_slice <- gtdb_rep_metadata %>%
   mutate(species_no_space = gsub(" ", "-", species))
   
 write_tsv(gtdb_rep_metadata_slice, "inputs/gtdb_metadata.tsv")
+
+
+# combine not in GTDB and GTDB into one metadata file ---------------------
+
+gtdb_rep_metadata_slice2 <- gtdb_rep_metadata_slice %>%
+  mutate(accession_minus_version = gsub("\\.*", "", ident)) %>%
+  mutate(accession_minus_prefix  = gsub("GC[AF]_", "", accession_minus_version))
+
+
+genbank <- read_tsv("https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt",
+                    skip = 1)
+genbank <- genbank %>%
+  mutate(accession_minus_version = gsub("\\.*", "", `# assembly_accession`)) %>%
+  mutate(accession_minus_prefix  = gsub("GC[AF]_", "", accession_minus_version))
+
+
+
+# add the extra accession that's just not in the spreadsheet but is in genbank...
+extra <- tibble(`# assembly_accession`  = "GCA_000635495.1",
+                biosample               = "SAMN02671343",
+                bioproject              = "PRJNA239872",
+                taxid                   = 1471472,
+                organism_name           = "Prochlorococcus sp. scB243_495K23 (cyanobacteria)",
+                ftp_path = 'https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/635/495/GCA_000635495.1_De_novo_assembly_of_single-cell_genomes/',
+                accession_minus_version = "GCA_000635495",
+                accession_minus_prefix  = "000635495")
+
+gtdb_genbank <- genbank %>%
+  filter(accession_minus_prefix %in% gtdb_rep_metadata_slice2$accession_minus_prefix) %>%
+  bind_rows(extra) %>%
+  mutate(set = "gtdb_representatives")
+
+refseq_genbank <- genbank %>%
+  filter(accession_minus_prefix %in% new_refseq_slice$accession_minus_prefix) %>%
+  mutate(set = "refseq_not_in_genbank")
+  
+all_genomes <- bind_rows(gtdb_genbank, refseq_genbank) 
+colnames(all_genomes) <- c('assembly_accession', 'bioproject', 'biosample',
+                           'wgs_master', 'refseq_category', 'taxid', 'species_taxid', 
+                           'organism_name', 'infraspecific_name', 'isolate', 
+                           'version_status', 'assembly_level', 'release_type', 
+                           'genome_rep', 'seq_rel_date', 'asm_name', 'submitter', 
+                           'gbrs_paired_asm', 'paired_asm_comp', 'ftp_path', 
+                           'excluded_from_refseq', 'relation_to_type_material', 
+                           'asm_not_live_date', 'accession_minus_version', 
+                           'accession_minus_prefix', 'set')
+
+write_tsv(all_genomes, "inputs/all_genomes_genbank_info_metadata.tsv")
+
+# name outputs by accession, deal with taxonomy/species names later;
+# can be rescued by left_join() with the other metadata tables writeen above

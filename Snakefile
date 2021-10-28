@@ -1,6 +1,6 @@
 import pandas as pd
 
-refseq = pd.read_csv("inputs/refseq_not_in_gtdb_metadata.tsv", sep = "\t", header = 0)
+refseq = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t", header = 0)
 ACC = metadata['assembly_accession'].to_list()
 
 ORPHEUM_DB = ["gtdb-rs202"]
@@ -95,5 +95,30 @@ rule sort_cds_gff:
     sortBed -i {input} > {output}
     '''
 
-bedtools complement -i GCF_020520145.1_filtered_sorted.gff -g region.sizes > GCF_020520145.1_noncds.bed
-bedtools getfasta -fi GCF_020520145.1_ASM2052014v1_genomic.fna -bed GCF_020520145.1_noncds.bed -name -s > GCF_020520145.1_noncds.fna
+rule complement_cds_gff:
+    input:
+        gff="outputs/cds_gff/{acc}_cds_sorted.gff",
+        sizes= "outputs/genome_regions_bed/{acc}_region.sizes"
+    output:"outputs/noncds_bed/{acc}_noncds.bed"
+    threads: 1
+    resources: 
+        mem_mb=4000,
+        tmpdir=TMPDIR
+    conda: "envs/bedtools.yml"
+    shell:'''
+    bedtools complement -i {input.gff} -g {input.sizes} > {output}
+    '''
+
+rule extract_noncds_from_genome:
+    input:
+        fna="inputs/assemblies/{acc}_genomic.fna",
+        bed="outputs/noncds_bed/{acc}_noncds.bed"
+    output:"outputs/noncds_fasta/{acc}_noncds.fasta"
+    threads: 1
+    resources: 
+        mem_mb=4000,
+        tmpdir=TMPDIR
+    conda: "envs/bedtools.yml"
+    shell:'''
+    bedtools getfasta -fi {input.fna} -bed {input.bed} -name -s > {output}
+    '''
