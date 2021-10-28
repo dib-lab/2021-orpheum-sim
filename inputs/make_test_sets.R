@@ -153,6 +153,13 @@ colnames(all_genomes) <- c('assembly_accession', 'bioproject', 'biosample',
                            'asm_not_live_date', 'accession_minus_version', 
                            'accession_minus_prefix', 'set')
 
+# edit ftp path to absolute; otherwise may download _rna_from_genomic, etc.
+all_genomes <- all_genomes %>%
+  mutate(ftp_path_full = gsub("https", "ftp", ftp_path)) %>%
+  mutate(ftp_suffix = gsub("(.*/\\s*(.*$))", "\\2", ftp_path)) %>%
+  mutate(ftp_path_full_genome = paste0(ftp_path_full, "/", ftp_suffix, "_genomic.fna.gz")) %>%
+  mutate(ftp_path_full_gff    = paste0(ftp_path_full, "/", ftp_suffix, "_genomic.gff.gz"))
+  
 write_tsv(all_genomes, "inputs/all_genomes_genbank_info_metadata.tsv")
 
 # name outputs by accession, deal with taxonomy/species names later;
