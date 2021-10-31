@@ -39,20 +39,54 @@ rule gunzip_assemblies:
     gunzip -c {input} > {output}
     '''
 
-rule download_gff:
-    output: "inputs/assemblies/{acc}_genomic.gff.gz",
-    threads: 1
+# many of the assemblies don't have gff files; standardize by annotating with bakta
+#rule download_gff:
+#    output: "inputs/assemblies/{acc}_genomic.gff.gz",
+#    threads: 1
+#    resources: 
+#        mem_mb=1000,
+#        tmpdir=TMPDIR
+#    run:
+#        row = metadata.loc[metadata['assembly_accession'] == wildcards.acc]
+#        gff_ftp = row['ftp_path_full_gff'].values
+#        gff_ftp = gff_ftp[0]
+#        shell("wget -O {output} {gff_ftp}")
+
+# uncomment to download db; use db that was downloaded for another project
+# rule download_bakta_db:
+#    output: "inputs/bakta_db/db/version.json"
+#    threads: 1
+#    resources: mem_mb = 4000
+#    conda: "envs/bakta.yml"
+#    shell:'''
+#    bakta_db download --output {output}
+#    '''
+
+rule bakta_assemblies:
+    input: 
+        fna= "inputs/assemblies/{acc}_genomic.fna",
+        db="/home/tereiter/github/2021-orpheum-refseq/inputs/bakta_db/db/version.json"
+    output: 
+        "outputs/bakta_assemblies/{acc}.faa",
+        "outputs/bakta_assemblies/{acc}.gff3",
+        "outputs/bakta_assemblies/{acc}.fna",
     resources: 
-        mem_mb=1000,
-        tmpdir=TMPDIR
-    run:
-        row = metadata.loc[metadata['assembly_accession'] == wildcards.acc]
-        gff_ftp = row['ftp_path_full_gff'].values
-        gff_ftp = gff_ftp[0]
-        shell("wget -O {output} {gff_ftp}")
+        mem_mb = lambda wildcards, attempt: attempt * 16000 ,
+        tmpdir= TMPDIR
+    benchmark: "benchmarks/bakta_{acc}.txt"
+    conda: 'envs/bakta.yml'
+    params: 
+        dbdir="~/github/2021-orpheum-refseq/inputs/bakta_db/db/",
+        outdir = 'outputs/bakta_assemblies/',
+    threads: 1
+    shell:'''
+    bakta --db {params.dbdir} --prefix {wildcards.acc} --output {params.outdir} \
+        --locus-tag {wildcards.acc} --keep-contig-headers {input.fna}
+    '''
+
 
 rule filter_gff_to_cds:
-    input: gff="inputs/assemblies/{acc}_genomic.gff.gz",
+    input: gff="outputs/bakta_assemblies/{acc}.gff3",
     output: cds="outputs/cds_gff/{acc}_cds.gff"
     threads: 1
     resources: 
@@ -85,7 +119,7 @@ rule define_genome_regions_as_bed:
     conda: "envs/samtools.yml"
     shell:'''    
     samtools faidx {input}
-    cut -f 1,2 {input}.fai > {output}
+    cut -f 1,2 {input}.fai | sort -n -k1 > {output}
     '''
 
 rule sort_cds_gff:
@@ -133,10 +167,6 @@ rule polyester_simulate_reads:
     output: "outputs/polyester/{acc}_{seq}/sample_01.fasta.gz"
     params:
         outdir = lambda wildcards: "outputs/polyester/" + wildcards.acc + "_" + wildcards.seq + "/",
-        num_reps = 1,
-        read_length = 150,
-        simulate_paired = False,
-        num_reads_per_transcript=100,
     benchmark: "benchmarks/polyester-{acc}-{seq}.txt"
     threads: 1
     resources:

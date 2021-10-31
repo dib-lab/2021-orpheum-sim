@@ -7,10 +7,8 @@ library(BSgenome)
 
 fasta <- snakemake@input[['fasta']]
 outdir <- snakemake@params[['outdir']]
-num_reps <- as.integer(snakemake@params[["num_reps"]]) # 1
-read_length <- as.integer(snakemake@params[["read_length"]]) # 150
-paired <- snakemake@params[["simulate_paired"]] # true/false
-reads_per_seq <- as.integer(snakemake@params[["num_reads_per_seq"]])
+num_reps <- 1
+reads_per_seq <- 100
 
 # build count matrix
 fastaStrSet <- readDNAStringSet(fasta)
@@ -19,7 +17,7 @@ countmat = matrix(reads_per_seq, nrow=length(readDNAStringSet(fasta)), ncol=num_
 simulate_experiment_countmat(fasta          = fasta, 
                              readmat        = countmat, 
                              reportCoverage = TRUE, 
-                             readlen        = read_length, 
-                             paired         = paired, 
+                             readlen        = 150, 
+                             paired         = FALSE, 
                              outdir         = outdir, 
                              gzip           = TRUE)
