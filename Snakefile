@@ -14,7 +14,8 @@ TMPDIR = "/scratch/tereiter/"
 
 rule all:
     input:
-        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ)
+        "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
+        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
@@ -52,7 +53,7 @@ rule download_gtdbtk_db:
 
 rule decompress_gtdbtk_db:
     input:"inputs/gtdbtk_data.tar.gz"
-    output: "inputs/"
+    output: "inputs/release202/manifest.tsv"
     threads: 1
     resources: 
         mem_mb=1000,
@@ -64,7 +65,7 @@ rule decompress_gtdbtk_db:
 rule gtdb_classify_assemblies:
     input:
         fna=expand("inputs/assemblies/{acc}_genomic.fna", acc = ACC),
-        gtdb="inputs/"
+        gtdb="inputs/release202/manifest.tsv"
     output: "outputs/gtdbtk/gtdbtk.bac120.summary.tsv"
     threads: 8
     resources: 
@@ -73,10 +74,11 @@ rule gtdb_classify_assemblies:
     params:
         indir="inputs/assemblies",
         outdir="outputs/gtdbtk",
+        dbdir="inputs/release202"
         ext="fna"
     conda: "envs/gtdbtk.yml"
     shell:'''
-    real=$(realpath {input.gtdb})
+    real=$(realpath {params.dbdir})
     export GTDBTK_DATA_PATH=${{real}}
     gtdbtk classify_wf --cpus {threads} --genome_dir {params.indir} --out_dir {params.outdir} -x {params.ext}
     '''
