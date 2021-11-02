@@ -69,12 +69,12 @@ rule gtdb_classify_assemblies:
     output: "outputs/gtdbtk/gtdbtk.bac120.summary.tsv"
     threads: 8
     resources: 
-        mem_mb=32000,
+        mem_mb=264000,
         tmpdir=TMPDIR
     params:
         indir="inputs/assemblies",
         outdir="outputs/gtdbtk",
-        dbdir="inputs/release202"
+        dbdir="inputs/release202",
         ext="fna"
     conda: "envs/gtdbtk.yml"
     shell:'''
