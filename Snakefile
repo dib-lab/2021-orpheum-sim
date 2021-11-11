@@ -15,6 +15,7 @@ TMPDIR = "/scratch/tereiter/"
 rule all:
     input:
         "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
+        expand("outputs/cds_fasta_paladin/{acc}_cds.sam", acc = ACC),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
@@ -218,6 +219,45 @@ rule polyester_simulate_reads:
       tmpdir=TMPDIR
     conda: "envs/polyester.yml"
     script: "scripts/polyester.R"
+
+rule translate_cds_fasta:
+    input: "outputs/cds_fasta/{acc}_cds.fasta"
+    output: "outputs/cds_fasta_aa/{acc}_cds.faa"
+    threads: 1
+    resources:
+      mem_mb=4000,
+      tmpdir=TMPDIR
+    conda: "envs/emboss.yml"
+    shell:'''
+    transeq {input} {output}
+    '''
+    
+rule paladin_index_cds_fasta:
+    input: "outputs/cds_fasta_aa/{acc}_cds.faa"
+    output: "outputs/cds_fasta_aa/{acc}_cds.faa.pro"
+    threads: 1
+    resources:
+      mem_mb=4000,
+      tmpdir=TMPDIR
+    conda: "envs/paladin.yml"
+    shell:'''
+    paladin -r3 index {input}
+    '''
+
+rule paladin_align_polyester_cds_to_determine_orf:
+    input: 
+        ref="outputs/cds_fasta_aa/{acc}_cds.faa",
+        idx="outputs/cds_fasta_aa/{acc}_cds.faa.pro",
+        reads="outputs/polyester/{acc}_cds/sample_01.fasta.gz"
+    output: "outputs/cds_fasta_paladin/{acc}_cds.sam"
+    threads: 1
+    resources:
+      mem_mb=4000,
+      tmpdir=TMPDIR
+    conda: "envs/paladin.yml"
+    shell:'''
+    paladin align -C -t 1 {input.ref} {input.reads} > {output}
+    '''
 
 # orpheum index cp'd over from @bluegenes 2021-rank-compare
 rule orpheum_translate_reads:
