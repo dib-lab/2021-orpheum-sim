@@ -14,7 +14,9 @@ TMPDIR = "/scratch/tereiter/"
 
 rule all:
     input:
-        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ)
+        "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
+        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
+        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -37,6 +39,48 @@ rule gunzip_assemblies:
         tmpdir=TMPDIR
     shell:'''
     gunzip -c {input} > {output}
+    '''
+
+rule download_gtdbtk_db:
+    output: "inputs/gtdbtk_data.tar.gz"
+    threads: 1
+    resources: 
+        mem_mb=1000,
+        tmpdir=TMPDIR
+    shell:'''
+    wget -O {output} https://data.gtdb.ecogenomic.org/releases/latest/auxillary_files/gtdbtk_data.tar.gz
+    '''
+
+rule decompress_gtdbtk_db:
+    input:"inputs/gtdbtk_data.tar.gz"
+    output: "inputs/release202/manifest.tsv"
+    threads: 1
+    resources: 
+        mem_mb=1000,
+        tmpdir=TMPDIR
+    shell:'''
+    tar xf {input} -C inputs/
+    '''
+
+rule gtdb_classify_assemblies:
+    input:
+        fna=expand("inputs/assemblies/{acc}_genomic.fna", acc = ACC),
+        gtdb="inputs/release202/manifest.tsv"
+    output: "outputs/gtdbtk/gtdbtk.bac120.summary.tsv"
+    threads: 8
+    resources: 
+        mem_mb=264000,
+        tmpdir=TMPDIR
+    params:
+        indir="inputs/assemblies",
+        outdir="outputs/gtdbtk",
+        dbdir="inputs/release202",
+        ext="fna"
+    conda: "envs/gtdbtk.yml"
+    shell:'''
+    real=$(realpath {params.dbdir})
+    export GTDBTK_DATA_PATH=${{real}}
+    gtdbtk classify_wf --cpus {threads} --genome_dir {params.indir} --out_dir {params.outdir} -x {params.ext}
     '''
 
 # many of the assemblies don't have gff files; standardize by annotating with bakta
@@ -188,8 +232,45 @@ rule orpheum_translate_reads:
         json="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_{seq}.summary.json"
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum-translate-{acc}-{seq}-{orpheum_db}-{alphabet}-k{ksize}.txt"
-    resources:  mem_mb=500000
+    resources:  
+        mem_mb=500000,
+        tmpdir=TMPDIR
     threads: 1
     shell:'''
     orpheum translate --alphabet {wildcards.alphabet} --peptide-ksize {wildcards.ksize}  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fasta} > {output.pep}
     '''
+
+rule cut_dedup_nuc_noncoding_read_names_cds_only:
+    input: "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.fna",
+    output:  "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.cut.dedup.fna.gz",
+    resources: 
+        mem_mb = 8000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    sed '/^>/ s/__.*//g' {input} | awk '/^>/{{f=!d[$1];d[$1]=1}}f' | gzip > {output}
+    '''
+
+rule grab_cut_dedup_coding_read_names:
+    input: "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.coding.faa", 
+    output: "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.aa_names.cut.dedup.txt",  
+    resources: 
+        mem_mb = 8000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    grep ">" {input} | sed '/^>/ s/__.*//g' | awk '/^>/{{f=!d[$1];d[$1]=1}}f' > {output}
+    '''
+
+rule isolate_noncoding_only_reads:
+    input: 
+        pep ="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.aa_names.cut.dedup.txt",  
+        noncoding = "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.cut.dedup.fna.gz",
+    output: "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz",
+    resources: 
+        mem_mb = 8000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:"""
+    cat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" | gzip > {output}
+    """
