@@ -1,0 +1,343 @@
+---
+title: "Orpheum on simulated reads"
+author: "Taylor Reiter"
+date:  '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, include = T, eval = T, warning = F,
+                      cache = T)
+options(scipen=999)
+```
+
+```{r libraries}
+library(dplyr)
+library(readr)
+library(tibble)
+library(tidyr)
+library(ggplot2)
+library(ggpmisc)
+library(ggpubr)
+library(broom)
+library(kableExtra)
+library(rjson)
+library(purrr)
+library(janitor)
+```
+
+```{r ggplot_base}
+ggplot_base <- theme_minimal() +
+  theme(plot.title = element_text(size = 8),
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 7),
+        legend.title = element_text(size = 6), 
+        legend.text = element_text(size = 6),
+        plot.title.position = "plot")
+```
+
+```{r function_read_and_format_orpheum_json}
+read_and_format_orpheum_json <- function(sys_glob_path, database, alphabet, ksize) {
+  file_prefix = paste0("outputs\\/orpheum\\/", database, "\\/", alphabet, "-k", ksize, "\\/")
+  json_df <- Sys.glob(sys_glob_path) %>%
+    set_names() %>%
+    map_dfr(~RJSONIO::fromJSON(content =., nullValue = NaN)$categorization_counts, .id = "sample") %>%
+    clean_names() %>%
+    mutate(sample = gsub(file_prefix, "", sample)) %>%
+    mutate(sample = gsub(".summary\\.json", "", sample)) %>%
+    mutate(database = database) %>%
+    mutate(ksize = paste0("k=", ksize)) %>%
+    mutate(alphabet = alphabet) %>%
+    mutate(total_reads = rowSums(across(where(is.numeric))))
+     
+  return(json_df)
+}
+
+read_and_format_orpheum_json_translation <- function(sys_glob_path, database, alphabet, ksize) {
+  file_prefix = paste0("outputs\\/orpheum\\/", database, "\\/", alphabet, "-k", ksize, "\\/")
+  json_df <- Sys.glob(sys_glob_path) %>%
+    set_names() %>%
+    map_dfr(~RJSONIO::fromJSON(content =., nullValue = NaN)$histogram_n_coding_frames_per_read, .id = "sample") %>%
+    clean_names() %>%
+    mutate(sample = gsub(file_prefix, "", sample)) %>%
+    mutate(sample = gsub("\\.summary\\.json", "", sample)) %>%
+    mutate(database = database) %>%
+    mutate(ksize = paste0("k=", ksize)) %>%
+    mutate(alphabet = alphabet)
+  
+  # make sure numbers are encoded as numeric, then replace NAs with 0s and sum to coding
+  json_df <- json_df %>%
+    mutate(across(where(~ anyNA(.) & is.numeric(.)), ~ replace_na(., 0))) %>%
+    mutate(coding_reads = rowSums(across(where(is.numeric))))
+  
+  # add missing cols
+  columns <- c(number_of_reads_with_1_putative_protein_coding_translations = 0,
+               number_of_reads_with_2_putative_protein_coding_translations = 0,
+               number_of_reads_with_3_putative_protein_coding_translations = 0,
+               number_of_reads_with_4_putative_protein_coding_translations = 0,
+               number_of_reads_with_5_putative_protein_coding_translations = 0,
+               number_of_reads_with_6_putative_protein_coding_translations = 0)
+  json_df <- json_df %>%
+    add_column(!!!columns[!names(columns) %in% names(.)])
+  
+  # calculate percentage of reads translated into n number of coding frames
+  json_df <- json_df %>%
+    mutate(f_putative_coding_1_translation = ifelse(number_of_reads_with_1_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_1_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_2_translation = ifelse(number_of_reads_with_2_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_2_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_3_translation = ifelse(number_of_reads_with_3_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_3_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_4_translation = ifelse(number_of_reads_with_4_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_4_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_5_translation = ifelse(number_of_reads_with_5_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_5_putative_protein_coding_translations/coding_reads)) %>%
+    mutate(f_putative_coding_6_translation = ifelse(number_of_reads_with_6_putative_protein_coding_translations == 0, 0,
+                                                    number_of_reads_with_6_putative_protein_coding_translations/coding_reads))
+  
+  return(json_df)
+}
+```
+
+```{r function_plot_orpheum}
+plot_orpheum_translation_frames <- function(orpheum_trans, ksize, alphabet, database){
+  orpheum_trans_long <- orpheum_trans %>%
+    select(sample, database, ksize, alphabet, starts_with("f_putative")) %>%
+    pivot_longer(cols = starts_with("f_putative"), names_to = "translation_frame", values_to = "fraction") %>%
+    mutate(translation_frame = gsub("f_putative_coding_", "", translation_frame)) %>%
+    mutate(translation_frame = gsub("_translation", "", translation_frame))
+  
+  ggplot(orpheum_trans_long, aes(x = translation_frame, y = fraction)) +
+    geom_violin(scale = "width") +
+    theme_minimal() +
+    ggplot_base +
+    # geom_segment(aes(x = .5, y = .91, xend = 1.5, yend = .91), linetype = "dashed") +
+    # geom_segment(aes(x = .5, y = .99, xend = 1.5, yend = .99), linetype = "dashed") +
+    # geom_segment(aes(x = 1.5, y = .09, xend = 2.5, yend = .09), linetype = "dashed") +
+    # geom_segment(aes(x = 1.5, y = .01, xend = 2.5, yend = .01), linetype = "dashed") +
+    labs(x = "number of coding frames per read", y = "fraction of putative coding reads",
+         title = paste0("db = ", database, ", alphabet = ", alphabet, ", k = ", ksize))
+}
+```
+
+## Background
+
++ The average bacterial genome is 5 Mbp and encodes 5000 proteins ([Land et al. 2015](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4361730/)). As of January 2014:
+    + The largest bacterial genome in GenBank was *Sorangium cellulosum* strain So0157-2, with 14,782,125 bp encoding 11,599 genes
+    + The smallest bacterial genome in GenBank was *Candidatus Nasuia deltocephalinicola* strain NAS-ALF with 112,091 bp encoding 137 genes.
++ It is estimated that 88% (40-97%) of the bacterial genome is protein coding ([Land et al. 2015](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4361730/)).
++ It is not currently known how many alternate/overlapping ORFs exist in a bacterial genome.
+    + Computational estimates suggest there are 10-400 alternate ORFs per genome ([Ardern et al. 2020](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7457138/)).
+    + Experimental evidence suggest ~100 alternate overlapping ORFs per genome ([Zehentner et al. 2020](https://www.biorxiv.org/content/10.1101/2020.11.18.388249v1.full.pdf))
+
+## Results
+
+```{r}
+info <- read_tsv("inputs/all_genomes_genbank_info_metadata.tsv") %>%
+  mutate(accession_minus_prefix = gsub("[12]$", "", accession_minus_prefix)) %>%
+  mutate(set = gsub("refseq_not_in_genbank", "refseq_not_in_gtdb", set))
+
+refseq <- read_tsv("inputs/refseq_not_in_gtdb_metadata.tsv")
+gtdb <- read_tsv("inputs/gtdb_metadata.tsv")
+```
+
+```{r}
+json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/gtdb-rs202/protein-k10/*json",
+                                     database = "gtdb-rs202", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+```
+
+```{r}
+translate <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/gtdb-rs202/protein-k10/*json",
+                                     database = "gtdb-rs202", 
+                                     alphabet = "protein",
+                                     ksize = 10) %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+```
+
+
+```{r json_long}
+json_long <- json %>%
+  select(accession_minus_prefix, type, set, total_reads, translation_is_shorter_than_peptide_k_mer_size_1, 
+         translation_frame_has_stop_codon_s, coding, non_coding, low_complexity_nucleotide,
+         read_length_was_shorter_than_3_peptide_k_mer_size, low_complexity_peptide_in_protein20_alphabet) %>%
+  pivot_longer(cols = translation_is_shorter_than_peptide_k_mer_size_1:low_complexity_peptide_in_protein20_alphabet, names_to = "measurement", values_to = "reads")
+```
+
+```{r, fig.height=9}
+ggplot(json_long, aes(x = reorder(accession_minus_prefix, total_reads), y = reads, fill = measurement)) +
+  geom_col() +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  coord_flip() +
+  facet_wrap(~ type + set, scales = "free_y") +
+  scale_fill_brewer(palette = "Dark2") +
+  guides(fill = guide_legend(nrow = 4))
+```
+
+```{r, fig.height=7}
+ggplot(json_long %>% filter(measurement %in% c("coding", "non_coding")), 
+       aes(x = reorder(accession_minus_prefix, total_reads), y = reads, fill = measurement)) +
+  geom_col() +
+  theme_minimal() +
+  coord_flip() +
+  facet_wrap(~ type + set, scales = "free_y") +
+  scale_fill_brewer(palette = "Dark2")
+```
+
+```{r}
+json_long_pct <- json_long %>%
+  mutate(pct = reads/total_reads * 100) 
+```
+
+```{r, fig.height=9}
+plot_order_cds <- json_long_pct %>%
+  select(accession_minus_prefix, type, measurement, pct) %>%
+  filter(measurement == "coding") %>%
+  filter(type == "cds") %>%
+  arrange(desc(pct)) %>%
+  mutate(plot_order = 1:42) %>%
+  select(accession_minus_prefix, plot_order)
+
+json_long_pct <- json_long_pct %>%
+  left_join(plot_order_cds)
+
+ggplot(json_long_pct, 
+       aes(x = reorder(accession_minus_prefix, plot_order), y = pct, label = round(pct, digits = 0), fill = measurement)) +
+  geom_col() +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5)) + 
+  coord_flip() +
+  facet_wrap(~ type + set, scales = "free_y") +
+  scale_fill_brewer(palette = "Dark2") +
+  guides(fill = guide_legend(nrow = 4))
+```
+
+```{r, eval = F}
+gtdb_all <- read_csv("https://osf.io/p6z3w/download")
+gtdb_tally_phylum <- gtdb_all %>% 
+  group_by(phylum) %>%
+  tally()
+
+gtdb_tally_genus <- gtdb_all %>% 
+  group_by(phylum, class, order, family, genus) %>%
+  tally()
+
+gtdb_tally_species <- gtdb_all %>% 
+  group_by(phylum, class, order, family, genus, species) %>%
+  tally()
+```
+
+## GTDB worst performers
+
++ GCA_903857495: s__Geothrix sp903857495 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage. 
+  + d__Bacteria	p__Acidobacteriota	c__Holophagae	o__Holophagales	f__Holophagaceae	g__Geothrix	s__Geothrix sp903857495
+  + 1154 phylum reps
+  + 133 genus reps
+  + 50 species reps
++ GCA_903852495: s__Pseudopelobacter sp903852495 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage. 
+  + d__Bacteria	p__Desulfobacterota_F	c__Desulfuromonadia	o__Geobacterales	f__Pseudopelobacteraceae	g__Pseudopelobacter	s__Pseudopelobacter sp903852495
+  + 275 phylum reps
+  + 87 genus reps
+  + 26 species reps
++ GCA_903869265: s__UBA2262 sp903869265 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage.
+  + d__Bacteria	p__Desulfobacterota	c__Desulfobulbia	o__Desulfobulbales	f__Desulfurivibrionaceae	g__UBA2262	s__UBA2262 sp903869265
+  + 1040 phylum reps
+  + 50 genus reps
+  + 39 species reps
++ GCA_903861715: s__CAIPMZ01 sp903861715 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage. 
+  + d__Bacteria	p__Patescibacteria	c__Paceibacteria	o__Moranbacterales	f__GWC2-37-73	g__CAIPMZ01	s__CAIPMZ01 sp903861715
+  + 3496 phylum reps
+  + 42 genus reps
+  + 25 species reps
++ GCA_900314695: s__Methanobrevibacter_A sp900314695 (derived from environmental source). Rumen uncultured genome, 240x coverage.
+  + 46% noncoding predicted in CDS
+  + d__Archaea	p__Methanobacteriota	c__Methanobacteria	o__Methanobacteriales	f__Methanobacteriaceae	g__Methanobrevibacter_A	s__Methanobrevibacter_A sp900314695
+  + 523 phylum reps
+  + 136 genus reps
+  + 25 species reps
+
+```{r}
+gca_903857495_cds_coding_scores <- read_csv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_903857495.1_cds.coding_scores.csv")
+gca_903857495_cds_coding_names <- read_tsv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_903857495.1_cds.aa_names.cut.dedup.txt",
+                                           col_names = "read_id") %>%
+  mutate(read_id = gsub(">", "", read_id))
+
+gca_903857495_cds_coding_scores_predicted_noncoding <- gca_903857495_cds_coding_scores %>%
+  filter(!read_id %in% gca_903857495_cds_coding_names$read_id)
+
+nrow(gca_903857495_cds_coding_scores_predicted_noncoding) / 6
+
+tmp <- gca_903857495_cds_coding_scores_predicted_noncoding %>%
+  filter(jaccard_in_peptide_db > .3) %>%
+  group_by(read_id) %>%
+  tally()
+
+table(tmp$n)
+```
+
+## RefSeq not in GTDB
+
+<!-- Worst performers -->
+<!-- + GCA_019599295 -->
+<!-- + GCA_018398935 -->
+<!-- + GCA_018863415 -->
+<!-- + GCA_019173545 -->
+<!-- + GCA_019688735 -->
+
+Orpheum performs increasingly poorly with increasingly large relatedness between the query genome and the closest related genome in GTDB.
+If there is a species-level representative in the database, orpheum performs pretty well. 
+
+```{r gtdbtk}
+gtdbtk <- read_tsv("outputs/gtdbtk/gtdbtk.ar122.summary.tsv", col_types = "cccdcddcddddccccdc", na = "N/A")
+gtdbtk <- read_tsv("outputs/gtdbtk/gtdbtk.bac120.summary.tsv", col_types = "cccdcddcddddccccdc", na = "N/A") %>%
+  bind_rows(gtdbtk) %>%
+  mutate(user_genome = gsub("_genomic", "", user_genome))
+
+refseq_gtdbtk <- refseq %>%
+  mutate(assembly_accession = gsub("GCF", "GCA", assembly_accession)) %>%
+  left_join(gtdbtk, by = c("assembly_accession" = "user_genome")) %>%
+  select(assembly_accession, organism_name, classification, closest_placement_ani,
+         msa_percent, translation_table) %>%
+  separate(classification, into=c("superkingdom", "phylum", "order", "class", "family", "genus", "species"), sep = ";") %>%
+  mutate(accession_minus_prefix = gsub("GCA_", "", assembly_accession)) %>%
+  mutate(accession_minus_prefix = gsub("\\.[1-9].*", "", accession_minus_prefix))
+```
+
+```{r}
+refseq_gtdbtk <- json_long_pct %>%
+  filter(set == "refseq_not_in_gtdb") %>%
+  filter(measurement == "coding") %>%
+  filter(type == "cds") %>%
+  left_join(refseq_gtdbtk, by = "accession_minus_prefix")
+
+# ggplot(refseq_gtdbtk, aes(x = pct, y = msa_percent)) +
+#   geom_point() +
+#   theme_minimal()
+# summary(lm(pct~msa_percent, data = refseq_gtdbtk))
+
+refseq_gtdbtk <- refseq_gtdbtk %>%
+  mutate(classification_level = ifelse(genus == "g__", "higher than genus",
+                              ifelse(species == "s__", "higher than species", "species")))
+ggplot(refseq_gtdbtk, aes(x = classification_level, y = pct, label = accession_minus_prefix)) +
+  geom_boxplot() +
+  geom_point() +
+  theme_minimal() +
+  labs(x = "Classification level by GTDB-Tk", y = "percent of CDS-derived reads predicted as coding")
+```
+
+## Conclusion
+
+Species adds the majority of predictive capacity, but the rest of GTDB seems necessary probably to fill out prediction of e.g. horizontally transferred elements. 
+(The rest of GTDB thing isn't really demonstrated well here -- I know this from the *R. gnavus* experiments using just the family and genus level DBs. May be worth it here to demonstrate increasing recovery of coding reads with each level of inclusion of taxonomy up to phylum level. See if any of the species selected here in the `refseq not in gtdb` set can be used with DBs we already have...would have to be a ruminoccocus DB, if not maybe ask tessa to make a set of DBs.)
+
+## Other thoughts
+
++ If we knew the correct open reading frame for each read (not just CDS/nonCDS distinction), we could calibrate the jaccard similarity cutoff -- may be reasonable to down adjust slightly to ~0.4 or ~0.3.
