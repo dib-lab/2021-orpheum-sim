@@ -272,5 +272,5 @@ rule isolate_noncoding_only_reads:
         tmpdir=TMPDIR
     threads: 1
     shell:"""
-    cat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" | gzip > {output}
+    zcat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" | gzip > {output}
     """
