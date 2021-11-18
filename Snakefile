@@ -241,7 +241,7 @@ rule paladin_index_cds_fasta:
       tmpdir=TMPDIR
     conda: "envs/paladin.yml"
     shell:'''
-    paladin -r3 index {input}
+    paladin index -r3 {input}
     '''
 
 rule paladin_align_polyester_cds_to_determine_orf:
@@ -273,7 +273,7 @@ rule orpheum_translate_reads:
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum-translate-{acc}-{seq}-{orpheum_db}-{alphabet}-k{ksize}.txt"
     resources:  
-        mem_mb=500000,
+        mem_mb=100000,
         tmpdir=TMPDIR
     threads: 1
     shell:'''
