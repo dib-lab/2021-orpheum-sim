@@ -17,7 +17,7 @@ rule all:
         "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
         expand("outputs/cds_fasta_paladin/{acc}_cds.sam", acc = ACC),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
-        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
+        expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
         expand("outputs/orpheum_cutoffs/{orpheum_db}/{alpha_ksize}/{acc}.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
