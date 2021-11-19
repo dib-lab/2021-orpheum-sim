@@ -18,6 +18,7 @@ rule all:
         expand("outputs/cds_fasta_paladin/{acc}_cds.sam", acc = ACC),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
+        expand("outputs/orpheum_cutoffs/{orpheum_db}/{alpha_ksize}/{acc}.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -314,3 +315,15 @@ rule isolate_noncoding_only_reads:
     shell:"""
     zcat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" | gzip > {output}
     """
+
+rule calculate_jaccard_cutoff_tp_fp_rates:
+    input:
+        sam="outputs/cds_fasta_paladin/{acc}_cds.sam",
+        csv=expand("outputs/orpheum/{{orpheum_db}}/{{alphabet}}-k{{ksize}}/{{acc}}_{seq}.coding_scores.csv", seq = SEQ)
+    output: tsv="outputs/orpheum_cutoffs/{orpheum_db}/{alphabet}-k{ksize}/{acc}.tsv"
+    resources: 
+        mem_mb = 8000,
+        tmpdir=TMPDIR
+    threads: 1
+    conda: "envs/tidyverse.yml"
+    script: "scripts/compare_jaccard_cutoffs.R"
