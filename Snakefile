@@ -4,7 +4,9 @@ metadata = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t
 ACC = metadata['assembly_accession'].to_list()
 SEQ = ['cds', 'noncds']
 
-ORPHEUM_DB = ["gtdb-rs202"]
+ORPHEUM_DB = ["gtdb-rs202", 'c__Clostridia', 'g__Clostridium', 'p__Firmicutes_A', 
+              'f__Clostridiaceae', 'o__Clostridiales',  's__Clostridium_beijerincki']
+
 #dayhoff_ksizes = [14, 16, 18]
 protein_ksizes = [10]
 ALPHA_KSIZE = expand('protein-k{k}', k=protein_ksizes)
