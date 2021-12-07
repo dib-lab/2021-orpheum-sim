@@ -276,7 +276,7 @@ rule orpheum_translate_reads:
     conda: "envs/orpheum.yml"
     benchmark: "benchmarks/orpheum-translate-{acc}-{seq}-{orpheum_db}-{alphabet}-k{ksize}.txt"
     resources:  
-        mem_mb=100000,
+        mem_mb=10000,
         tmpdir=TMPDIR
     threads: 1
     shell:'''
