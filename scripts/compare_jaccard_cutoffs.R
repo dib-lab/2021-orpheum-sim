@@ -2,6 +2,7 @@ library(dplyr)
 library(tidyr)
 library(readr)
 
+#sam <- read_tsv("outputs/cds_fasta_paladin/GCA_001884725.2_cds.sam", comment = "@", col_names = F)
 sam <- read_tsv(snakemake@input[['sam']], comment = "@", col_names = F)
 sam <- sam %>%
   select(X1) %>%
@@ -14,13 +15,16 @@ sam <- sam %>%
   mutate(orf_number_corrected = ifelse(orf_number_corrected == 6, -3, orf_number_corrected)) %>%
   select(read_id, true_translation_frame = orf_number_corrected)
 
+#orpheum_cds <- read_csv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_001884725.2_cds.coding_scores.csv") %>%
 orpheum_cds <- read_csv(snakemake@input[['csv']][1]) %>%
-  mutate(true_category = "Coding") %>%
   left_join(sam, orpheum_cds, by = "read_id") %>%
-  select(read_id, jaccard_in_peptide_db, predicted_category = category, true_category, 
-         predicted_translation_frame = translation_frame, true_translation_frame)
+  select(read_id, jaccard_in_peptide_db, predicted_category = category,
+         predicted_translation_frame = translation_frame, true_translation_frame) %>%
+  mutate(true_category = ifelse(true_translation_frame == predicted_translation_frame, "Coding", "Non-coding")) %>%
+  select(read_id, jaccard_in_peptide_db, predicted_category, true_category, 
+         predicted_translation_frame, true_translation_frame) 
 
-orpheum_noncds <- read_csv(snakemake@input[['csv']][2]) %>%
+orpheum_noncds <- read_csv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_001884725.2_noncds.coding_scores.csv") %>%
   mutate(true_category = "Non-coding") %>%
   mutate(true_translation_frame = NA) %>%
   select(read_id, jaccard_in_peptide_db, predicted_category = category, true_category, 
@@ -29,41 +33,35 @@ orpheum_noncds <- read_csv(snakemake@input[['csv']][2]) %>%
 results <- bind_rows(orpheum_cds, orpheum_noncds)
 
 results_filtered <- results %>%
-  filter(predicted_category %in% c("Coding", "Non-coding")) %>%
-  group_by(read_id) %>%
-  arrange(desc(jaccard_in_peptide_db)) %>%
-  slice(n = 1)
+  filter(predicted_category %in% c("Coding", "Non-coding")) 
+
 
 # table of FP/FN/TP/TN at different cutoffs -------------------------------
-
-multi_class_rates_pct <- function(confusion_matrix) {
-  true_positives  <- diag(confusion_matrix)
-  false_positives <- colSums(confusion_matrix) - true_positives
-  true_positives  <- c(true_positives, sum(true_positives))
-  false_positives  <- c(false_positives, sum(false_positives))
-  df <- data.frame(coding_true_positives  = (true_positives / sum(confusion_matrix)*100)[1], 
-                   noncoding_true_positives = (true_positives / sum(confusion_matrix)*100)[2],
-                   total_true_positives = (true_positives / sum(confusion_matrix)*100)[3],
-                   coding_false_positives = (false_positives/sum(confusion_matrix)*100)[1], 
-                   noncoding_false_positives = (false_positives/sum(confusion_matrix)*100)[2],
-                   total_false_positives = (false_positives/sum(confusion_matrix)*100)[3],
-                   row.names = 1)
-  return(df)
-}
 
 accuracy_at_different_jaccard <- function(results, cutoff) {
   results <- results %>%
     mutate(new_predicted_category = ifelse(jaccard_in_peptide_db >= cutoff, "Coding", "Non-coding"))
   
-  ct <- table(results$new_predicted_category, results$true_category)
+  ct <- table(results$true_category, results$new_predicted_category)
   cm <- as.matrix(ct)
-  df <- multi_class_rates_pct(cm)
+  
+  tp <- cm[1]
+  tn <- cm[4]
+  fp <- cm[2]
+  fn <- cm[3]
+  
+  sensitivity <- tp / (tp + fn)
+  specificity <- tn / (tn + fp)
+  
+  youden_index = sensitivity + specificity - 1 
+  
+  df <- data.frame(tp, tn, fp, fn, sensitivity, specificity, youden_index)
   df$jaccard_cutoff <- cutoff
   return(df)
 }
 
 df_all_cutoffs <- data.frame()
-for(cutoff in seq(from = .1, to = .6, by = .025)){
+for(cutoff in seq(from = 0.01, to = 1, by = .01)){
   df_cutoffs <- accuracy_at_different_jaccard(results_filtered, cutoff)
   df_all_cutoffs <- bind_rows(df_all_cutoffs, df_cutoffs)
 }
