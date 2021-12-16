@@ -28,7 +28,7 @@ TMPDIR = "/scratch/tereiter/"
 rule all:
     input:
         "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
-        expand("inputs/gffs/{acc_w_gff}_genomic.gff.gz", acc_w_gff = ACC_W_GFF),
+        expand("outputs/noncds_pseudogenes/{orpheum_db}/{alpha_ksize}/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes_summary.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc_w_gff = ACC_W_GFF),
         expand("outputs/cds_fasta_paladin/{acc}_cds.sam", acc = ACC),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
@@ -347,10 +347,10 @@ rule assess_noncoding_in_pseudogenes:
     input: 
         gff = "inputs/gffs/{acc_w_gff}_genomic.gff.gz",
         noncds_bed = "outputs/noncds_bed/{acc_w_gff}_noncds.bed",
-        noncds_csv = "outputs/{orpheum_db}/{alphabet}-k{ksize}/{acc_w_gff}_noncds.coding_scores.csv"
+        noncds_csv = "outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc_w_gff}_noncds.coding_scores.csv"
     output: 
-        pseudo_tsv = "outputs/noncds_pseudogenes/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes.tsv",
-        pseudo_tab = "outputs/noncds_pseudogenes/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes_summary.tsv" 
+        pseudo_tsv = "outputs/noncds_pseudogenes/{orpheum_db}/{alphabet}-k{ksize}/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes.tsv",
+        pseudo_tab = "outputs/noncds_pseudogenes/{orpheum_db}/{alphabet}-k{ksize}/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes_summary.tsv" 
     resources: 
         mem_mb = 4000,
         tmpdir=TMPDIR
