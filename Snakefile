@@ -4,9 +4,10 @@ metadata = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t
 ACC = metadata['assembly_accession'].to_list()
 SEQ = ['cds', 'noncds']
 
-ORPHEUM_DB = ["gtdb-rs202", "s__Thermosipho_affectus", "g__Thermosipho",
-              "f__Fervidobacteriaceae", "o__Thermotogales", "c__Thermotogae", 
-              "p__Thermotogota"]
+ORPHEUM_DB = ["gtdb-rs202"]
+#ORPHEUM_DB = ["gtdb-rs202", "s__Thermosipho_affectus", "g__Thermosipho",
+#              "f__Fervidobacteriaceae", "o__Thermotogales", "c__Thermotogae", 
+#              "p__Thermotogota"]
 
 ACC_W_GFF = ['GCA_000008025.1', 'GCA_000012125.1', 'GCA_000012285.1', 'GCA_000020225.1',
              'GCA_000145825.2', 'GCA_000154205.1', 'GCA_000167435.2', 'GCA_000196555.1',

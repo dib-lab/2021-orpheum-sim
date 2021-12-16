@@ -1,5 +1,8 @@
 library(rtracklayer)
 library(plyranges)
+library(tidyr)
+library(dplyr)
+library(readr)
 
 gff <- rtracklayer::import(snakemake@input[['gff']])
 pseudo <- gff %>% filter(pseudo == "true")
@@ -8,7 +11,7 @@ bed_noncds <- import(snakemake@input[['noncds_bed']])
 
 noncds_pseudo <- subsetByOverlaps(bed_noncds, pseudo, type=c("any"))
 
-noncds_coding_scores <- read_csv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_000008025.1_noncds.coding_scores.csv") %>%
+noncds_coding_scores <- read_csv(snakemake@input[['noncds_csv']]) %>%
   filter(category == "Coding") %>%
   separate(read_id, into = c("tmp1", "tmp2", "seqnames", "ranges"), extra = "drop", remove = F, sep = ":") %>%
   select(-tmp1, -tmp2) %>%
