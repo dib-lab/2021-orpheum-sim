@@ -4,3 +4,4 @@ channels:
  - defaults
 dependencies:
  - bioconductor-rtracklayer=1.52.0 
+ - bioconductor-plyranges=1.14.0 

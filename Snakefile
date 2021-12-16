@@ -8,6 +8,16 @@ ORPHEUM_DB = ["gtdb-rs202", "s__Thermosipho_affectus", "g__Thermosipho",
               "f__Fervidobacteriaceae", "o__Thermotogales", "c__Thermotogae", 
               "p__Thermotogota"]
 
+ACC_W_GFF = ['GCA_000008025.1', 'GCA_000012125.1', 'GCA_000012285.1', 'GCA_000020225.1',
+             'GCA_000145825.2', 'GCA_000154205.1', 'GCA_000167435.2', 'GCA_000196555.1',
+             'GCA_000299235.1', 'GCA_000830885.1', 'GCA_000970205.1', 'GCA_001700755.2',
+             'GCA_001884725.2', 'GCA_002006445.1', 'GCA_002442595.2', 'GCA_004006635.1',
+             'GCA_006742205.1', 'GCA_009156025.2', 'GCA_013456555.2', 'GCA_015356815.2',
+             'GCA_018205295.1', 'GCA_018282115.1', 'GCA_018336995.1', 'GCA_018398935.1', 
+             'GCA_018588215.1', 'GCA_019173545.1', 'GCA_019175305.1', 'GCA_019599295.1',
+             'GCA_019688735.1', 'GCA_020520145.1', 'GCA_900083515.1', 'GCA_900156205.1',
+             'GCA_900478295.1']
+
 #dayhoff_ksizes = [14, 16, 18]
 protein_ksizes = [10]
 ALPHA_KSIZE = expand('protein-k{k}', k=protein_ksizes)
@@ -18,6 +28,7 @@ TMPDIR = "/scratch/tereiter/"
 rule all:
     input:
         "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
+        expand("inputs/gffs/{acc_w_gff}_genomic.gff.gz", acc_w_gff = ACC_W_GFF),
         expand("outputs/cds_fasta_paladin/{acc}_cds.sam", acc = ACC),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
@@ -89,17 +100,18 @@ rule gtdb_classify_assemblies:
     '''
 
 # many of the assemblies don't have gff files; standardize by annotating with bakta
-#rule download_gff:
-#    output: "inputs/assemblies/{acc}_genomic.gff.gz",
-#    threads: 1
-#    resources: 
-#        mem_mb=1000,
-#        tmpdir=TMPDIR
-#    run:
-#        row = metadata.loc[metadata['assembly_accession'] == wildcards.acc]
-#        gff_ftp = row['ftp_path_full_gff'].values
-#        gff_ftp = gff_ftp[0]
-#        shell("wget -O {output} {gff_ftp}")
+# but use these files to assess pseudo genes via NCBI's PGAP pseudo annotation.
+rule download_gff:
+    output: "inputs/gffs/{acc_w_gff}_genomic.gff.gz",
+    threads: 1
+    resources: 
+        mem_mb=1000,
+        tmpdir=TMPDIR
+    run:
+        row = metadata.loc[metadata['assembly_accession'] == wildcards.acc]
+        gff_ftp = row['ftp_path_full_gff'].values
+        gff_ftp = gff_ftp[0]
+        shell("wget -O {output} {gff_ftp}")
 
 # uncomment to download db; use db that was downloaded for another project
 # rule download_bakta_db:
@@ -330,3 +342,18 @@ rule calculate_jaccard_cutoff_tp_fp_rates:
     threads: 1
     conda: "envs/tidyverse.yml"
     script: "scripts/compare_jaccard_cutoffs.R"
+
+rule assess_noncoding_in_pseudogenes:
+    input: 
+        gff = "inputs/gffs/{acc_w_gff}_genomic.gff.gz",
+        noncds_bed = "outputs/noncds_bed/{acc_w_gff}_noncds.bed",
+        noncds_csv = "outputs/{orpheum_db}/{alphabet}-k{ksize}/{acc_w_gff}_noncds.coding_scores.csv"
+    output: 
+        pseudo_tsv = "outputs/noncds_pseudogenes/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes.tsv",
+        pseudo_tab = "outputs/noncds_pseudogenes/{acc_w_gff}_noncds_predicted_as_coding_in_pseudogenes_summary.tsv" 
+    resources: 
+        mem_mb = 4000,
+        tmpdir=TMPDIR
+    threads: 1
+    conda: "envs/rtracklayer.yml"
+    script: "scripts/noncoding_in_pseudogenes.R"
