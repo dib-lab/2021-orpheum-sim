@@ -25,4 +25,4 @@ write_tsv(as.data.frame(noncds_predicted_as_coding_that_fall_in_pseudogenes), sn
 summary_df <- data.frame(accession = snakemake@wildcards[['acc_w_gff']],
                          noncds_predicted_as_coding = length(unique(noncds_coding_scores$read_id)),
                          noncds_predicted_as_coding_in_pseudogenes = length(unique(noncds_predicted_as_coding_that_fall_in_pseudogenes$read_id)))
-write_tsv(summary_df, snakemake@output[['pseudo_toab']])
+write_tsv(summary_df, snakemake@output[['pseudo_tab']])
