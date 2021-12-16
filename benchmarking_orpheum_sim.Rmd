@@ -132,16 +132,24 @@ plot_orpheum_translation_frames <- function(orpheum_trans, ksize, alphabet, data
 
 ## Results
 
-```{r}
+```{r metadata}
 info <- read_tsv("inputs/all_genomes_genbank_info_metadata.tsv") %>%
   mutate(accession_minus_prefix = gsub("[12]$", "", accession_minus_prefix)) %>%
   mutate(set = gsub("refseq_not_in_genbank", "refseq_not_in_gtdb", set))
 
 refseq <- read_tsv("inputs/refseq_not_in_gtdb_metadata.tsv")
 gtdb <- read_tsv("inputs/gtdb_metadata.tsv")
+
+gtdbtk <- read_tsv("outputs/gtdbtk/gtdbtk.ar122.summary.tsv", col_types = "cccdcddcddddccccdc", na = "N/A")
+gtdbtk <- read_tsv("outputs/gtdbtk/gtdbtk.bac120.summary.tsv", col_types = "cccdcddcddddccccdc", na = "N/A") %>%
+  bind_rows(gtdbtk) %>%
+  mutate(user_genome = gsub("_genomic", "", user_genome)) %>%
+  mutate(accession_minus_prefix = gsub("GCA_", "", user_genome)) %>%
+  mutate(accession_minus_prefix = gsub("\\.[1-9].*", "", accession_minus_prefix)) %>%
+  separate(classification, into=c("superkingdom", "phylum", "order", "class", "family", "genus", "species"), sep = ";")
 ```
 
-```{r}
+```{r gtdb_json_num}
 json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/gtdb-rs202/protein-k10/*json",
                                      database = "gtdb-rs202", 
                                      alphabet = "protein",
@@ -151,7 +159,7 @@ json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/gtdb-rs202
   left_join(info, by = "accession_minus_prefix")
 ```
 
-```{r}
+```{r gtdb_json_translation}
 translate <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/orpheum/gtdb-rs202/protein-k10/*json",
                                      database = "gtdb-rs202", 
                                      alphabet = "protein",
@@ -161,42 +169,67 @@ translate <- read_and_format_orpheum_json_translation(sys_glob_path = "outputs/o
   left_join(info, by = "accession_minus_prefix")
 ```
 
-
 ```{r json_long}
 json_long <- json %>%
-  select(accession_minus_prefix, type, set, total_reads, translation_is_shorter_than_peptide_k_mer_size_1, 
+  select(accession_minus_prefix, type, set, total_reads,
+         translation_is_shorter_than_peptide_k_mer_size_1, 
          translation_frame_has_stop_codon_s, coding, non_coding, low_complexity_nucleotide,
          read_length_was_shorter_than_3_peptide_k_mer_size, low_complexity_peptide_in_protein20_alphabet) %>%
   pivot_longer(cols = translation_is_shorter_than_peptide_k_mer_size_1:low_complexity_peptide_in_protein20_alphabet, names_to = "measurement", values_to = "reads")
 ```
 
-```{r, fig.height=9}
-ggplot(json_long, aes(x = reorder(accession_minus_prefix, total_reads), y = reads, fill = measurement)) +
-  geom_col() +
-  theme_minimal() +
-  theme(legend.position = "bottom") +
-  coord_flip() +
-  facet_wrap(~ type + set, scales = "free_y") +
-  scale_fill_brewer(palette = "Dark2") +
-  guides(fill = guide_legend(nrow = 4))
-```
-
-```{r, fig.height=7}
-ggplot(json_long %>% filter(measurement %in% c("coding", "non_coding")), 
-       aes(x = reorder(accession_minus_prefix, total_reads), y = reads, fill = measurement)) +
-  geom_col() +
-  theme_minimal() +
-  coord_flip() +
-  facet_wrap(~ type + set, scales = "free_y") +
-  scale_fill_brewer(palette = "Dark2")
-```
-
-```{r}
+```{r json_long_pct}
 json_long_pct <- json_long %>%
   mutate(pct = reads/total_reads * 100) 
 ```
 
-```{r, fig.height=9}
+```{r, fig.height=9, eval = F}
+# ggplot(json_long, aes(x = reorder(accession_minus_prefix, total_reads), y = reads, fill = measurement)) +
+#   geom_col() +
+#   theme_minimal() +
+#   theme(legend.position = "bottom") +
+#   coord_flip() +
+#   facet_wrap(~ type + set, scales = "free_y") +
+#   scale_fill_brewer(palette = "Dark2") +
+#   guides(fill = guide_legend(nrow = 4))
+```
+
+```{r, fig.height=7, eval = F}
+# ggplot(json_long %>% filter(measurement %in% c("coding", "non_coding")), 
+#        aes(x = reorder(accession_minus_prefix, total_reads), y = reads, fill = measurement)) +
+#   geom_col() +
+#   theme_minimal() +
+#   coord_flip() +
+#   facet_wrap(~ type + set, scales = "free_y") +
+#   scale_fill_brewer(palette = "Dark2")
+```
+
+```{r, fig.height=9, eval = F}
+# plot_order_cds <- json_long_pct %>%
+#   select(accession_minus_prefix, type, measurement, pct) %>%
+#   filter(measurement == "coding") %>%
+#   filter(type == "cds") %>%
+#   arrange(desc(pct)) %>%
+#   mutate(plot_order = 1:42) %>%
+#   select(accession_minus_prefix, plot_order)
+# 
+# json_long_pct <- json_long_pct %>%
+#   left_join(plot_order_cds)
+# 
+# ggplot(json_long_pct, 
+#        aes(x = reorder(accession_minus_prefix, plot_order), y = pct, label = round(pct, digits = 0), fill = measurement)) +
+#   geom_col() +
+#   theme_minimal() +
+#   theme(legend.position = "bottom") +
+#   geom_text(size = 3, position = position_stack(vjust = 0.5)) + 
+#   coord_flip() +
+#   facet_wrap(~ type + set, scales = "free_y") +
+#   scale_fill_brewer(palette = "Dark2") +
+#   guides(fill = guide_legend(nrow = 4))
+```
+
+```{r plot}
+# fix plot order for desc % TP CDS
 plot_order_cds <- json_long_pct %>%
   select(accession_minus_prefix, type, measurement, pct) %>%
   filter(measurement == "coding") %>%
@@ -206,138 +239,378 @@ plot_order_cds <- json_long_pct %>%
   select(accession_minus_prefix, plot_order)
 
 json_long_pct <- json_long_pct %>%
-  left_join(plot_order_cds)
+  left_join(plot_order_cds) %>%
+  left_join(gtdbtk)
 
-ggplot(json_long_pct, 
-       aes(x = reorder(accession_minus_prefix, plot_order), y = pct, label = round(pct, digits = 0), fill = measurement)) +
+# fix species labels for "s__" and "g__"
+json_long_pct <- json_long_pct %>%
+  mutate(species = ifelse(species == "s__", genus, species)) %>%
+  mutate(species = ifelse(species == "g__", family, species))
+
+# change category to "other" for measurements
+json_long_pct <- json_long_pct %>%
+  mutate(measurement2 = ifelse(measurement %in% c("coding", "non_coding"), measurement, "other")) %>%
+  group_by(accession_minus_prefix, type, set, species, plot_order, measurement2) %>%
+  summarize(pct2 = sum(pct))
+
+cds_noncds_gtdb_nongtdb_plt <- ggplot(json_long_pct %>% mutate(species = gsub(".__", "", species)), 
+       aes(x = reorder(species, plot_order), y = pct2, label = round(pct2, digits = 0), fill = measurement2)) +
   geom_col() +
   theme_minimal() +
-  theme(legend.position = "bottom") +
-  geom_text(size = 3, position = position_stack(vjust = 0.5)) + 
+  theme(legend.position = "right",
+        axis.text = element_text(size = 6),
+        axis.text.y = element_text(face = "italic"),
+        axis.title = element_text(size = 7),
+        legend.title = element_text(size = 7),
+        legend.text = element_text(size = 6),
+        strip.text = element_text(size = 7),
+        panel.spacing = unit(.1, "lines")) +
+  geom_text(size = 2, position = position_stack(vjust = 0.5)) + 
   coord_flip() +
-  facet_wrap(~ type + set, scales = "free_y") +
-  scale_fill_brewer(palette = "Dark2") +
+  labs(x = "species", y = "percent of reads", fill = "read type") +
+  facet_wrap(~ type + set, scales = "free_y", 
+             labeller = as_labeller(c(cds = "Coding", noncds = "Non-coding", 
+                                      gtdb_representatives = "Genome in GTDB",
+                                      refseq_not_in_gtdb = "Genome not in GTDB"))) +
+  scale_fill_brewer(palette = "Dark2", labels = c("Coding", "Non-coding", "Other")) +
   guides(fill = guide_legend(nrow = 4))
 ```
 
-```{r, eval = F}
-gtdb_all <- read_csv("https://osf.io/p6z3w/download")
-gtdb_tally_phylum <- gtdb_all %>% 
-  group_by(phylum) %>%
-  tally()
-
-gtdb_tally_genus <- gtdb_all %>% 
-  group_by(phylum, class, order, family, genus) %>%
-  tally()
-
-gtdb_tally_species <- gtdb_all %>% 
-  group_by(phylum, class, order, family, genus, species) %>%
-  tally()
+```{r}
+json_long_pct %>% 
+  group_by(set, type, measurement2) %>%
+  summarize(mean = mean(pct2),
+            sd = sd(pct2))
 ```
 
-## GTDB worst performers
-
-+ GCA_903857495: s__Geothrix sp903857495 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage. 
-  + d__Bacteria	p__Acidobacteriota	c__Holophagae	o__Holophagales	f__Holophagaceae	g__Geothrix	s__Geothrix sp903857495
-  + 1154 phylum reps
-  + 133 genus reps
-  + 50 species reps
-+ GCA_903852495: s__Pseudopelobacter sp903852495 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage. 
-  + d__Bacteria	p__Desulfobacterota_F	c__Desulfuromonadia	o__Geobacterales	f__Pseudopelobacteraceae	g__Pseudopelobacter	s__Pseudopelobacter sp903852495
-  + 275 phylum reps
-  + 87 genus reps
-  + 26 species reps
-+ GCA_903869265: s__UBA2262 sp903869265 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage.
-  + d__Bacteria	p__Desulfobacterota	c__Desulfobulbia	o__Desulfobulbales	f__Desulfurivibrionaceae	g__UBA2262	s__UBA2262 sp903869265
-  + 1040 phylum reps
-  + 50 genus reps
-  + 39 species reps
-+ GCA_903861715: s__CAIPMZ01 sp903861715 (derived from environmental source, derived from metagenome). Freshwater MAG bin, 1x coverage. 
-  + d__Bacteria	p__Patescibacteria	c__Paceibacteria	o__Moranbacterales	f__GWC2-37-73	g__CAIPMZ01	s__CAIPMZ01 sp903861715
-  + 3496 phylum reps
-  + 42 genus reps
-  + 25 species reps
-+ GCA_900314695: s__Methanobrevibacter_A sp900314695 (derived from environmental source). Rumen uncultured genome, 240x coverage.
-  + 46% noncoding predicted in CDS
-  + d__Archaea	p__Methanobacteriota	c__Methanobacteria	o__Methanobacteriales	f__Methanobacteriaceae	g__Methanobrevibacter_A	s__Methanobrevibacter_A sp900314695
-  + 523 phylum reps
-  + 136 genus reps
-  + 25 species reps
-
-```{r}
-gca_903857495_cds_coding_scores <- read_csv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_903857495.1_cds.coding_scores.csv")
-gca_903857495_cds_coding_names <- read_tsv("outputs/orpheum/gtdb-rs202/protein-k10/GCA_903857495.1_cds.aa_names.cut.dedup.txt",
-                                           col_names = "read_id") %>%
-  mutate(read_id = gsub(">", "", read_id))
-
-gca_903857495_cds_coding_scores_predicted_noncoding <- gca_903857495_cds_coding_scores %>%
-  filter(!read_id %in% gca_903857495_cds_coding_names$read_id)
-
-nrow(gca_903857495_cds_coding_scores_predicted_noncoding) / 6
-
-tmp <- gca_903857495_cds_coding_scores_predicted_noncoding %>%
-  filter(jaccard_in_peptide_db > .3) %>%
-  group_by(read_id) %>%
-  tally()
-
-table(tmp$n)
+```{r, eval = F}
+# gtdb_all <- read_csv("https://osf.io/p6z3w/download")
+# gtdb_tally_phylum <- gtdb_all %>% 
+#   group_by(phylum) %>%
+#   tally()
+# 
+# gtdb_tally_genus <- gtdb_all %>% 
+#   group_by(phylum, class, order, family, genus) %>%
+#   tally()
+# 
+# gtdb_tally_species <- gtdb_all %>% 
+#   group_by(phylum, class, order, family, genus, species) %>%
+#   tally()
 ```
 
 ## RefSeq not in GTDB
 
-<!-- Worst performers -->
-<!-- + GCA_019599295 -->
-<!-- + GCA_018398935 -->
-<!-- + GCA_018863415 -->
-<!-- + GCA_019173545 -->
-<!-- + GCA_019688735 -->
-
 Orpheum performs increasingly poorly with increasingly large relatedness between the query genome and the closest related genome in GTDB.
 If there is a species-level representative in the database, orpheum performs pretty well. 
 
-```{r gtdbtk}
-gtdbtk <- read_tsv("outputs/gtdbtk/gtdbtk.ar122.summary.tsv", col_types = "cccdcddcddddccccdc", na = "N/A")
-gtdbtk <- read_tsv("outputs/gtdbtk/gtdbtk.bac120.summary.tsv", col_types = "cccdcddcddddccccdc", na = "N/A") %>%
-  bind_rows(gtdbtk) %>%
-  mutate(user_genome = gsub("_genomic", "", user_genome))
-
-refseq_gtdbtk <- refseq %>%
-  mutate(assembly_accession = gsub("GCF", "GCA", assembly_accession)) %>%
-  left_join(gtdbtk, by = c("assembly_accession" = "user_genome")) %>%
-  select(assembly_accession, organism_name, classification, closest_placement_ani,
-         msa_percent, translation_table) %>%
-  separate(classification, into=c("superkingdom", "phylum", "order", "class", "family", "genus", "species"), sep = ";") %>%
-  mutate(accession_minus_prefix = gsub("GCA_", "", assembly_accession)) %>%
-  mutate(accession_minus_prefix = gsub("\\.[1-9].*", "", accession_minus_prefix))
-```
-
 ```{r}
-refseq_gtdbtk <- json_long_pct %>%
+json_long_pct_refseq <- json_long_pct %>%
   filter(set == "refseq_not_in_gtdb") %>%
-  filter(measurement == "coding") %>%
-  filter(type == "cds") %>%
-  left_join(refseq_gtdbtk, by = "accession_minus_prefix")
+  filter(measurement2 == "coding") %>%
+  filter(type == "cds") 
 
-# ggplot(refseq_gtdbtk, aes(x = pct, y = msa_percent)) +
-#   geom_point() +
-#   theme_minimal()
-# summary(lm(pct~msa_percent, data = refseq_gtdbtk))
-
-refseq_gtdbtk <- refseq_gtdbtk %>%
-  mutate(classification_level = ifelse(genus == "g__", "higher than genus",
-                              ifelse(species == "s__", "higher than species", "species")))
-ggplot(refseq_gtdbtk, aes(x = classification_level, y = pct, label = accession_minus_prefix)) +
+json_long_pct_refseq  <- json_long_pct_refseq  %>%
+  mutate(classification_level = ifelse(grepl("f__", species), "family",
+                                       ifelse(grepl("g__", species), "genus", "species")))
+refseq_gtdbtk_plt <- ggplot(json_long_pct_refseq , aes(x = classification_level, y = pct2, 
+                                                       label = accession_minus_prefix,
+                                                       color = classification_level)) +
   geom_boxplot() +
   geom_point() +
   theme_minimal() +
-  labs(x = "Classification level by GTDB-Tk", y = "percent of CDS-derived reads predicted as coding")
+  ylim(c(0, 100)) +
+  theme(legend.position = "none",
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 7),
+        legend.title = element_text(size = 7),
+        legend.text = element_text(size = 6)) +
+  labs(x = "Classification level by GTDB-Tk", y = "percent CDS reads\npredicted as coding") +
+  scale_color_manual(values = c("family" = "#33A02C", genus = "#B2DF8A", species = "#1F78B4"))
+```
+
+## Jaccard similarity cutoff
+
+```{r}
+cutoffs <- Sys.glob("outputs/orpheum_cutoffs/gtdb-rs202/protein-k10/*tsv") %>%
+  map_dfr(read_tsv) 
+
+cutoffs <- cutoffs %>%
+  left_join(info, by = c("accession" = "assembly_accession")) %>%
+  left_join(gtdbtk, by = c("accession" = "user_genome")) %>%
+  mutate(closest_classification_level = 
+           ifelse(genus == "g__", "family",
+                  ifelse(species == "s__", "genus", "species"))) %>%
+  mutate(closest_classification_level = ifelse(set == "gtdb_representatives", 
+                                               "genome", 
+                                               closest_classification_level))
+
+cutoffs$closest_classification_level <- factor(cutoffs$closest_classification_level,
+                                               levels = c("genome", 
+                                                          "species",
+                                                          "genus", 
+                                                          "family"))
+tmp <- cutoffs %>%
+  group_by(jaccard_cutoff, closest_classification_level) %>%
+  summarize(mean_sensitivity = mean(sensitivity),
+            mean_specificity = mean(specificity), 
+            mean_youden = mean(youden_index))
+  
+jaccard_tp_plt  <- ggplot(tmp, aes(x = 1-mean_specificity, y = mean_sensitivity, color = closest_classification_level)) +
+  geom_point(alpha = .5) +
+  xlim(0, 1) + ylim(0, 1) +
+  facet_wrap(~closest_classification_level) + 
+  labs(x = "1 - specificity", y = "1 - sensitivity",
+       color = "Rank of closest\nrelative in GTDB") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.text = element_text(size = 6),
+        axis.title = element_text(size = 7),
+        strip.text = element_text(size = 7),
+        legend.title = element_text(size = 7),
+        legend.text = element_text(size = 6)) +
+  scale_color_brewer(palette = "Paired") +
+  guides(fill = guide_legend(nrow = 5))
+
+tmp %>%
+  group_by(closest_classification_level) %>%
+  arrange(desc(mean_youden)) %>%
+  slice(1)
+
+
+```
+
+## Lineage plots
+
+```{r read_cbeij}
+cbeij_gtdb <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/gtdb-rs202/protein-k10/GCA_002006445.1*json",
+                                     database = "gtdb-rs202", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+cbeij_phylum <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/p__Firmicutes_A/protein-k10/GCA_002006445.1*json",
+                                     database = "p__Firmicutes_A", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+cbeij_class <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/c__Clostridia/protein-k10/GCA_002006445.1*json",
+                                     database = "c__Clostridia", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+cbeij_order <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/o__Clostridiales/protein-k10/GCA_002006445.1*json",
+                                     database = "o__Clostridiales", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+cbeij_family <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/f__Clostridiaceae/protein-k10/GCA_002006445.1*json",
+                                     database = "f__Clostridiaceae", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+cbeij_genus <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/g__Clostridium/protein-k10/GCA_002006445.1*json",
+                                     database = "g__Clostridium", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+cbeij_species <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/s__Clostridium_beijerincki/protein-k10/GCA_002006445.1*json",
+                                     database = "s__Clostridium_beijerincki", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+
+cbeij <- bind_rows(cbeij_species, cbeij_genus, cbeij_family, cbeij_order,
+                   cbeij_class, cbeij_phylum, cbeij_gtdb)
+```
+
+```{r reformat_cbeij}
+cbeij_long_pct <- cbeij %>%
+  select(accession_minus_prefix, type, set, database, total_reads,
+         translation_is_shorter_than_peptide_k_mer_size_1, 
+         translation_frame_has_stop_codon_s, coding, non_coding, low_complexity_nucleotide,
+         read_length_was_shorter_than_3_peptide_k_mer_size, low_complexity_peptide_in_protein20_alphabet) %>%
+  pivot_longer(cols = translation_is_shorter_than_peptide_k_mer_size_1:low_complexity_peptide_in_protein20_alphabet, names_to = "measurement", values_to = "reads") %>%
+  mutate(pct = reads/total_reads * 100) 
+
+cbeij_long_pct <- cbeij_long_pct %>%
+   left_join(gtdbtk)
+```
+
+```{r}
+
+# change category to "other" for measurements
+cbeij_long_pct <- cbeij_long_pct %>%
+  mutate(measurement2 = ifelse(measurement %in% c("coding", "non_coding"), measurement, "other")) %>%
+  group_by(accession_minus_prefix, type, set, species, measurement2, database) %>%
+  summarize(pct2 = sum(pct))
+
+cbeij_long_pct$database <- factor(cbeij_long_pct$database, levels = c('gtdb-rs202', 'p__Firmicutes_A', 'c__Clostridia', 'o__Clostridiales', 'f__Clostridiaceae', 'g__Clostridium', 's__Clostridium_beijerincki'))
+
+lineage_plt <- ggplot(cbeij_long_pct, 
+                      aes(x = database, y = pct2, label = round(pct2, digits = 2), fill = measurement2)) +
+  geom_col() +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 7),
+        strip.text = element_text(size = 8),
+        panel.spacing = unit(.1, "lines")) +
+  geom_text(size = 2, position = position_stack(vjust = 0.5)) + 
+  coord_flip() +
+  labs(x = "species", y = "percent of reads", fill = "read type") +
+  facet_wrap(~ type + set, scales = "free_y", 
+             labeller = as_labeller(c(cds = "Coding", noncds = "Non-coding", 
+                                      gtdb_representatives = "Genome in GTDB",
+                                      refseq_not_in_gtdb = "Genome not in GTDB"))) +
+  scale_fill_brewer(palette = "Dark2", labels = c("Coding", "Non-coding", "Other")) +
+  guides(fill = guide_legend(nrow = 1))
+lineage_plt
+```
+
+## thermo
+
+```{r read_thermo}
+thermo_gtdb <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/gtdb-rs202/protein-k10/GCA_018588215.1*json",
+                                     database = "gtdb-rs202", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo_phylum <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/p__Thermotogota/protein-k10/GCA_018588215.1*json",
+                                     database = "p__Thermotogota", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo_class <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/c__Thermotogae/protein-k10/GCA_018588215.1*json",
+                                     database = "c__Thermotogae", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo_order <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/o__Thermotogales/protein-k10/GCA_018588215.1*json",
+                                     database = "o__Thermotogales", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo_family <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/f__Fervidobacteriaceae/protein-k10/GCA_018588215.1*json",
+                                     database = "f__Fervidobacteriaceae", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo_genus <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/g__Thermosipho/protein-k10/GCA_018588215.1*json",
+                                     database = "g__Thermosipho", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo_species <- json <- read_and_format_orpheum_json(sys_glob_path = "outputs/orpheum/s__Thermosipho_affectus/protein-k10/GCA_018588215.1*json",
+                                     database = "s__Thermosipho_affectus", 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+  separate(sample, into = c("prefix", "accession_minus_prefix", "type"), sep = "_", remove = F) %>%
+  mutate(accession_minus_prefix = gsub("\\..*", "", accession_minus_prefix)) %>%
+  left_join(info, by = "accession_minus_prefix")
+
+thermo <- bind_rows(thermo_species, thermo_genus, thermo_family, thermo_order,
+                    thermo_class, thermo_phylum, thermo_gtdb)
+```
+
+```{r reformat_thermo}
+thermo_long_pct <- thermo %>%
+  select(accession_minus_prefix, type, set, database, total_reads,
+         translation_is_shorter_than_peptide_k_mer_size_1, 
+         translation_frame_has_stop_codon_s, coding, non_coding, low_complexity_nucleotide,
+         read_length_was_shorter_than_3_peptide_k_mer_size, low_complexity_peptide_in_protein20_alphabet) %>%
+  pivot_longer(cols = translation_is_shorter_than_peptide_k_mer_size_1:low_complexity_peptide_in_protein20_alphabet, names_to = "measurement", values_to = "reads") %>%
+  mutate(pct = reads/total_reads * 100) 
+
+thermo_long_pct <- thermo_long_pct %>%
+   left_join(gtdbtk)
+```
+
+```{r}
+# change category to "other" for measurements
+thermo_long_pct <- thermo_long_pct %>%
+  mutate(measurement2 = ifelse(measurement %in% c("coding", "non_coding"), measurement, "other")) %>%
+  group_by(accession_minus_prefix, type, set, species, measurement2, database) %>%
+  summarize(pct2 = sum(pct))
+
+thermo_long_pct$database <- factor(thermo_long_pct$database, levels = c('gtdb-rs202', 'p__Thermotogota', 'c__Thermotogae', 'o__Thermotogales', 'f__Fervidobacteriaceae', 'g__Thermosipho', 's__Thermosipho_affectus'))
+
+lineage_plt <- ggplot(thermo_long_pct, 
+                      aes(x = database, y = pct2, label = round(pct2, digits = 2), fill = measurement2)) +
+  geom_col() +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text = element_text(size = 7),
+        axis.title = element_text(size = 8),
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 7),
+        strip.text = element_text(size = 8),
+        panel.spacing = unit(.1, "lines")) +
+  geom_text(size = 2, position = position_stack(vjust = 0.5)) + 
+  coord_flip() +
+  labs(x = "species", y = "percent of reads", fill = "read type") +
+  facet_wrap(~ type + set, scales = "free_y", 
+             labeller = as_labeller(c(cds = "Coding", noncds = "Non-coding", 
+                                      gtdb_representatives = "Genome in GTDB",
+                                      refseq_not_in_gtdb = "Genome not in GTDB"))) +
+  scale_fill_brewer(palette = "Dark2", labels = c("Coding", "Non-coding", "Other")) +
+  guides(fill = guide_legend(nrow = 1))
+lineage_plt
+```
+
+
+## combine plots
+
+
+```{r}
+pdf("orpheum_fig.pdf", height = 8, width = 6.5)
+ggarrange(cds_noncds_gtdb_nongtdb_plt, 
+          ggarrange(refseq_gtdbtk_plt, jaccard_tp_plt, 
+                    labels = c("B", "C"), ncol = 2, widths = c(3, 4)),
+          nrow = 2, labels = c("A", ""), heights = c(2, 1))
+dev.off()
 ```
 
 ## Conclusion
 
 Species adds the majority of predictive capacity, but the rest of GTDB seems necessary probably to fill out prediction of e.g. horizontally transferred elements. 
 (The rest of GTDB thing isn't really demonstrated well here -- I know this from the *R. gnavus* experiments using just the family and genus level DBs. May be worth it here to demonstrate increasing recovery of coding reads with each level of inclusion of taxonomy up to phylum level. See if any of the species selected here in the `refseq not in gtdb` set can be used with DBs we already have...would have to be a ruminoccocus DB, if not maybe ask tessa to make a set of DBs.)
-
-## Other thoughts
-
-+ If we knew the correct open reading frame for each read (not just CDS/nonCDS distinction), we could calibrate the jaccard similarity cutoff -- may be reasonable to down adjust slightly to ~0.4 or ~0.3.
