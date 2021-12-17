@@ -73,7 +73,10 @@ rule all:
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
         expand("outputs/orpheum_cutoffs/{orpheum_db}/{alpha_ksize}/{acc}.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
-        Checkpoint_AccToDbs("outputs/orpheum_species/{acc_db}.coding.faa")
+        Checkpoint_AccToDbs("outputs/orpheum_species/{acc_db}.coding.faa"),
+        "outputs/bakta_assemblies_compare/comp.csv",
+        expand("outputs/orpheum_compare/{orpheum_db}/{alpha_ksize}/comp.csv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
+
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -438,3 +441,61 @@ rule orpheum_translate_reads_species_db:
     shell:'''
     orpheum translate --jaccard-threshold 0.39 --alphabet protein --peptide-ksize 10  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fasta} > {output.pep}
     '''
+
+#################################################
+## Compare CDS vs orpheum
+#################################################
+
+rule sketch_orpheum_gtdb:
+    input: expand("outputs/orpheum/{{orpheum_db}}/{{alphabet}}-k{{ksize}}/{{acc}}_{seq}.coding.faa", seq = SEQ)
+    output: "outputs/orpheum_sigs/{orpheum_db}/{alphabet}-k{ksize}/{acc}.sig"
+    conda: 'envs/sourmash.yml'
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    threads: 1
+    shell:'''
+    sourmash sketch protein -p k=10,scaled=100,protein -o {output} --name {wildcards.acc} {input}
+    '''
+
+rule compare_orpheum_gtdb:
+    input: expand("outputs/orpheum_sigs/{{orpheum_db}}/{{alphabet}}-k{{ksize}}/{acc}.sig", acc = ACC)
+    output: 
+        comp = "outputs/orpheum_compare/{orpheum_db}/{alphabet}-k{ksize}/comp",
+        csv = "outputs/orpheum_compare/{orpheum_db}/{alphabet}-k{ksize}/comp.csv"
+    conda: "envs/sourmash.yml"
+    resources:  
+        mem_mb=15000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    sourmash compare -o {output.comp} --csv {output.csv} {input}
+    '''
+
+rule sketch_cds:
+    input: "outputs/bakta_assemblies/{acc}.faa"
+    output: "outputs/bakta_assemblies_sigs/{acc}.sig"
+    conda: 'envs/sourmash.yml'
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    threads: 1
+    shell:'''
+    sourmash sketch protein -p k=10,scaled=100,protein -o {output} --name {wildcards.acc} {input}
+    '''
+
+rule compare_cds:
+    input: expand("outputs/bakta_assemblies_sigs/{acc}.sig", acc = ACC)
+    output: 
+        comp = "outputs/bakta_assemblies_compare/comp",
+        csv = "outputs/bakta_assemblies_compare/comp.csv"
+    conda: "envs/sourmash.yml"
+    resources:  
+        mem_mb=15000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    sourmash compare -o {output.comp} --csv {output.csv} {input}
+    '''
+
+# rule mantel_test:
