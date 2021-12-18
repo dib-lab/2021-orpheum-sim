@@ -76,7 +76,8 @@ rule all:
         Checkpoint_AccToDbs("outputs/orpheum_species/{acc_db}.coding.faa"),
         "outputs/bakta_assemblies_compare/comp.csv",
         expand("outputs/orpheum_compare/{orpheum_db}/{alpha_ksize}/comp.csv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
-        expand("outputs/cds_as_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
+        expand("outputs/cds_as_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
+        expand("outputs/cds_as_coding_bwa/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_coding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -188,7 +189,6 @@ rule bakta_assemblies:
     bakta --db {params.dbdir} --prefix {wildcards.acc} --output {params.outdir} \
         --locus-tag {wildcards.acc} --keep-contig-headers {input.fna}
     '''
-
 
 rule filter_gff_to_cds:
     input: gff="outputs/bakta_assemblies/{acc}.gff3",
@@ -405,6 +405,30 @@ rule map_coding_predicted_as_noncoding_to_ref_nuc_cds:
 rule stat_map_nuc_noncoding_to_ref_nuc_set:
     input: "outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.bam"
     output:"outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.stat"
+    conda: "envs/bwa.yml"
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    shell:'''
+    samtools view -h {input} | samtools stats | grep '^SN' | cut -f 2- > {output}
+    '''
+
+rule map_coding_predicted_as_coding_to_ref_nuc_cds:
+    input: 
+        ref_nuc_cds="outputs/bakta_assemblies/{acc}.ffn",
+        ref_nuc_cds_bwt="outputs/bakta_assemblies/{acc}.ffn.bwt",
+        nuc_coding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.fna",
+    output: temp("outputs/cds_as_coding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.bam")
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 4000
+    threads: 1
+    shell:'''
+    bwa mem -t {threads} {input.ref_nuc_cds} {input.nuc_coding} | samtools sort -o {output} -
+    '''
+
+rule stat_map_nuc_coding_to_ref_nuc_set:
+    input: "outputs/cds_as_coding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.bam"
+    output:"outputs/cds_as_coding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.stat"
     conda: "envs/bwa.yml"
     resources:
         mem_mb = 2000,
