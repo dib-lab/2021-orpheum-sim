@@ -75,8 +75,8 @@ rule all:
         expand("outputs/orpheum_cutoffs/{orpheum_db}/{alpha_ksize}/{acc}.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
         Checkpoint_AccToDbs("outputs/orpheum_species/{acc_db}.coding.faa"),
         "outputs/bakta_assemblies_compare/comp.csv",
-        expand("outputs/orpheum_compare/{orpheum_db}/{alpha_ksize}/comp.csv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
-
+        expand("outputs/orpheum_compare/{orpheum_db}/{alpha_ksize}/comp.csv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
+        expand("outputs/cds_as_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -376,6 +376,42 @@ rule isolate_noncoding_only_reads:
     shell:"""
     zcat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" | gzip > {output}
     """
+
+rule index_ref_nuc_set:
+    input: "outputs/bakta_assemblies/{acc}.ffn"
+    output: "outputs/bakta_assemblies/{acc}.ffn.bwt"
+    conda: "envs/bwa.yml"
+    resources: 
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    threads: 1
+    shell:'''
+    bwa index {input}
+    ''' 
+
+rule map_coding_predicted_as_noncoding_to_ref_nuc_cds:
+    input: 
+        ref_nuc_cds="outputs/bakta_assemblies/{acc}.ffn",
+        ref_nuc_cds_bwt="outputs/bakta_assemblies/{acc}.ffn.bwt",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz",
+    output: temp("outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.bam")
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 4000
+    threads: 1
+    shell:'''
+    bwa mem -t {threads} {input.ref_nuc_cds} {input.nuc_noncoding} | samtools sort -o {output} -
+    '''
+
+rule stat_map_nuc_noncoding_to_ref_nuc_set:
+    input: "outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.bam"
+    output:"outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.stat"
+    conda: "envs/bwa.yml"
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    shell:'''
+    samtools view -h {input} | samtools stats | grep '^SN' | cut -f 2- > {output}
+    '''
 
 rule calculate_jaccard_cutoff_tp_fp_rates:
     input:
