@@ -1,22 +1,22 @@
 import pandas as pd
+import csv
 
 metadata = pd.read_csv("inputs/all_genomes_genbank_info_metadata.tsv", sep = "\t", header = 0)
 ACC = metadata['assembly_accession'].to_list()
 SEQ = ['cds', 'noncds']
 
-ORPHEUM_DB = ["gtdb-rs202", "s__Thermosipho_affectus", "g__Thermosipho",
-              "f__Fervidobacteriaceae", "o__Thermotogales", "c__Thermotogae", 
-              "p__Thermotogota"]
+ORPHEUM_DB = ["gtdb-rs202"]
+#ORPHEUM_DB = ["gtdb-rs202", "s__Thermosipho_affectus", "g__Thermosipho",
+#              "f__Fervidobacteriaceae", "o__Thermotogales", "c__Thermotogae", 
+#              "p__Thermotogota"]
 
-ACC_W_GFF = ['GCA_000008025.1', 'GCA_000012125.1', 'GCA_000012285.1', 'GCA_000020225.1',
-             'GCA_000145825.2', 'GCA_000154205.1', 'GCA_000167435.2', 'GCA_000196555.1',
+ACC_W_GFF = ['GCA_000008025.1', 'GCA_000012285.1', 'GCA_000020225.1', 'GCA_000145825.2',
              'GCA_000299235.1', 'GCA_000830885.1', 'GCA_000970205.1', 'GCA_001700755.2',
-             'GCA_001884725.2', 'GCA_002006445.1', 'GCA_002442595.2', 'GCA_004006635.1',
-             'GCA_006742205.1', 'GCA_009156025.2', 'GCA_013456555.2', 'GCA_015356815.2',
-             'GCA_018205295.1', 'GCA_018282115.1', 'GCA_018336995.1', 'GCA_018398935.1', 
-             'GCA_018588215.1', 'GCA_019173545.1', 'GCA_019175305.1', 'GCA_019599295.1',
-             'GCA_019688735.1', 'GCA_020520145.1', 'GCA_900083515.1', 'GCA_900156205.1',
-             'GCA_900478295.1']
+             'GCA_001884725.2', 'GCA_002442595.2', 'GCA_004006635.1',
+             'GCA_009156025.2', 'GCA_013456555.2', 'GCA_015356815.2',
+             'GCA_018282115.1', 'GCA_018336995.1', 'GCA_018398935.1', 
+             'GCA_018588215.1', 'GCA_019173545.1', 'GCA_019599295.1',
+             'GCA_019688735.1', 'GCA_020520145.1', 'GCA_900083515.1']
 
 #dayhoff_ksizes = [14, 16, 18]
 protein_ksizes = [10]
@@ -25,6 +25,46 @@ ALPHA_KSIZE = expand('protein-k{k}', k=protein_ksizes)
 
 TMPDIR = "/scratch/tereiter/"
 
+class Checkpoint_AccToDbs:
+    """
+    Define a class a la genome-grist to simplify file specification
+    from checkpoint (e.g. solve for {acc} wildcard). This approach
+    is documented at this url:
+    http://ivory.idyll.org/blog/2021-snakemake-checkpoints.html
+    """
+    def __init__(self, pattern):
+        self.pattern = pattern
+
+    def get_acc_dbs(self):
+        acc_db_csv = f'outputs/gtdbtk/gtdbtk_to_species_dbs.csv'
+        assert os.path.exists(acc_db_csv)
+
+        acc_dbs = []
+        with open(acc_db_csv, 'rt') as fp:
+           r = csv.DictReader(fp)
+           for row in r:
+               acc = row['accession']
+               db = row['species']
+               acc_db1 = acc + "-cds-"  + db
+               acc_dbs.append(acc_db1)
+               acc_db2 = acc + "-noncds-" + db
+               acc_dbs.append(acc_db2)
+
+        return acc_dbs
+
+    def __call__(self, w):
+        global checkpoints
+
+        # wait for the results of 'query_to_species_db';
+        # this will trigger exception until that rule has been run.
+        checkpoints.gtdbtk_to_species_db.get(**w)
+
+        # parse accessions in gather output file
+        genome_acc_dbs = self.get_acc_dbs()
+
+        p = expand(self.pattern, acc_db=genome_acc_dbs, **w)
+        return p
+
 rule all:
     input:
         "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
@@ -32,7 +72,12 @@ rule all:
         expand("outputs/cds_fasta_paladin/{acc}_cds.sam", acc = ACC),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_{seq}.summary.json", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC, seq = SEQ),
         expand("outputs/orpheum/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
-        expand("outputs/orpheum_cutoffs/{orpheum_db}/{alpha_ksize}/{acc}.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
+        expand("outputs/orpheum_cutoffs/{orpheum_db}/{alpha_ksize}/{acc}.tsv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
+        Checkpoint_AccToDbs("outputs/orpheum_species/{acc_db}.coding.faa"),
+        "outputs/bakta_assemblies_compare/comp.csv",
+        expand("outputs/orpheum_compare/{orpheum_db}/{alpha_ksize}/comp.csv", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
+        expand("outputs/cds_as_noncoding_bwa/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_noncoding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC),
+        expand("outputs/cds_as_coding_bwa/{orpheum_db}/{alpha_ksize}/{acc}_cds.nuc_coding.stat", orpheum_db = ORPHEUM_DB, alpha_ksize = ALPHA_KSIZE, acc = ACC)
 
 rule download_assemblies:
     output: "inputs/assemblies/{acc}_genomic.fna.gz",
@@ -144,7 +189,6 @@ rule bakta_assemblies:
     bakta --db {params.dbdir} --prefix {wildcards.acc} --output {params.outdir} \
         --locus-tag {wildcards.acc} --keep-contig-headers {input.fna}
     '''
-
 
 rule filter_gff_to_cds:
     input: gff="outputs/bakta_assemblies/{acc}.gff3",
@@ -275,7 +319,9 @@ rule paladin_align_polyester_cds_to_determine_orf:
     paladin align -C -t 1 {input.ref} {input.reads} > {output}
     '''
 
-# orpheum index cp'd over from @bluegenes 2021-rank-compare
+# orpheum index cp'd/ln'd over from @bluegenes 2021-rank-compare
+# Will run DB/ksize over ALL samples. 
+# See below for species:DB pair
 rule orpheum_translate_reads:
     input: 
         ref="inputs/orpheum_index/{orpheum_db}.{alphabet}-k{ksize}.nodegraph",
@@ -331,6 +377,66 @@ rule isolate_noncoding_only_reads:
     zcat {input.noncoding} | paste - - | grep -v -F -f {input.pep} | tr "\t" "\n" | gzip > {output}
     """
 
+rule index_ref_nuc_set:
+    input: "outputs/bakta_assemblies/{acc}.ffn"
+    output: "outputs/bakta_assemblies/{acc}.ffn.bwt"
+    conda: "envs/bwa.yml"
+    resources: 
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    threads: 1
+    shell:'''
+    bwa index {input}
+    ''' 
+
+rule map_coding_predicted_as_noncoding_to_ref_nuc_cds:
+    input: 
+        ref_nuc_cds="outputs/bakta_assemblies/{acc}.ffn",
+        ref_nuc_cds_bwt="outputs/bakta_assemblies/{acc}.ffn.bwt",
+        nuc_noncoding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.cut.dedup.only.fna.gz",
+    output: temp("outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.bam")
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 4000
+    threads: 1
+    shell:'''
+    bwa mem -t {threads} {input.ref_nuc_cds} {input.nuc_noncoding} | samtools sort -o {output} -
+    '''
+
+rule stat_map_nuc_noncoding_to_ref_nuc_set:
+    input: "outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.bam"
+    output:"outputs/cds_as_noncoding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_noncoding.stat"
+    conda: "envs/bwa.yml"
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    shell:'''
+    samtools view -h {input} | samtools stats | grep '^SN' | cut -f 2- > {output}
+    '''
+
+rule map_coding_predicted_as_coding_to_ref_nuc_cds:
+    input: 
+        ref_nuc_cds="outputs/bakta_assemblies/{acc}.ffn",
+        ref_nuc_cds_bwt="outputs/bakta_assemblies/{acc}.ffn.bwt",
+        nuc_coding="outputs/orpheum/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.fna",
+    output: temp("outputs/cds_as_coding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.bam")
+    conda: "envs/bwa.yml"
+    resources: mem_mb = 4000
+    threads: 1
+    shell:'''
+    bwa mem -t {threads} {input.ref_nuc_cds} {input.nuc_coding} | samtools sort -o {output} -
+    '''
+
+rule stat_map_nuc_coding_to_ref_nuc_set:
+    input: "outputs/cds_as_coding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.bam"
+    output:"outputs/cds_as_coding_bwa/{orpheum_db}/{alphabet}-k{ksize}/{acc}_cds.nuc_coding.stat"
+    conda: "envs/bwa.yml"
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    shell:'''
+    samtools view -h {input} | samtools stats | grep '^SN' | cut -f 2- > {output}
+    '''
+
 rule calculate_jaccard_cutoff_tp_fp_rates:
     input:
         sam="outputs/cds_fasta_paladin/{acc}_cds.sam",
@@ -357,3 +463,99 @@ rule assess_noncoding_in_pseudogenes:
     threads: 1
     conda: "envs/rtracklayer.yml"
     script: "scripts/noncoding_in_pseudogenes.R"
+
+######################################################
+## Run species level orpheum and compare to full gtdb
+######################################################
+
+checkpoint gtdbtk_to_species_db:
+    input: 
+        gtdbtk_bac = "outputs/gtdbtk/gtdbtk.bac120.summary.tsv",
+        gtdbtk_arc = "outputs/gtdbtk/gtdbtk.ar122.summary.tsv"
+    output: 
+        csv = 'outputs/gtdbtk/gtdbtk_to_species_dbs.csv'
+    conda: "envs/tidyverse.yml"
+    threads: 1
+    resources:
+        mem_mb=4000,
+        tmpdir = TMPDIR
+    script: "scripts/gtdbtk_to_species_db.R"
+
+# cat'd the resulting species to cp them to orpheum index 
+rule orpheum_translate_reads_species_db:
+    input: 
+        ref="inputs/orpheum_index/gtdb-rs202.{species}.protein-k10.nodegraph",
+        fasta="outputs/polyester/{acc}_{seq}/sample_01.fasta.gz"
+    output:
+        pep="outputs/orpheum_species/{acc}-{seq}-{species}.coding.faa",
+        nuc="outputs/orpheum_species/{acc}-{seq}-{species}.nuc_coding.fna",
+        nuc_noncoding="outputs/orpheum_species/{acc}-{seq}-{species}.nuc_noncoding.fna",
+        csv="outputs/orpheum_species/{acc}-{seq}-{species}.coding_scores.csv",
+        json="outputs/orpheum_species/{acc}-{seq}-{species}.summary.json"
+    conda: "envs/orpheum.yml"
+    benchmark: "benchmarks/orpheum-translate-{acc}-{seq}-{species}-species.txt"
+    resources:  
+        mem_mb=5000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    orpheum translate --jaccard-threshold 0.39 --alphabet protein --peptide-ksize 10  --peptides-are-bloom-filter --noncoding-nucleotide-fasta {output.nuc_noncoding} --coding-nucleotide-fasta {output.nuc} --csv {output.csv} --json-summary {output.json} {input.ref} {input.fasta} > {output.pep}
+    '''
+
+#################################################
+## Compare CDS vs orpheum
+#################################################
+
+rule sketch_orpheum_gtdb:
+    input: expand("outputs/orpheum/{{orpheum_db}}/{{alphabet}}-k{{ksize}}/{{acc}}_{seq}.coding.faa", seq = SEQ)
+    output: "outputs/orpheum_sigs/{orpheum_db}/{alphabet}-k{ksize}/{acc}.sig"
+    conda: 'envs/sourmash.yml'
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    threads: 1
+    shell:'''
+    sourmash sketch protein -p k=10,scaled=100,protein -o {output} --name {wildcards.acc} {input}
+    '''
+
+rule compare_orpheum_gtdb:
+    input: expand("outputs/orpheum_sigs/{{orpheum_db}}/{{alphabet}}-k{{ksize}}/{acc}.sig", acc = ACC)
+    output: 
+        comp = "outputs/orpheum_compare/{orpheum_db}/{alphabet}-k{ksize}/comp",
+        csv = "outputs/orpheum_compare/{orpheum_db}/{alphabet}-k{ksize}/comp.csv"
+    conda: "envs/sourmash.yml"
+    resources:  
+        mem_mb=15000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    sourmash compare -o {output.comp} --csv {output.csv} {input}
+    '''
+
+rule sketch_cds:
+    input: "outputs/bakta_assemblies/{acc}.faa"
+    output: "outputs/bakta_assemblies_sigs/{acc}.sig"
+    conda: 'envs/sourmash.yml'
+    resources:
+        mem_mb = 2000,
+        tmpdir = TMPDIR
+    threads: 1
+    shell:'''
+    sourmash sketch protein -p k=10,scaled=100,protein -o {output} --name {wildcards.acc} {input}
+    '''
+
+rule compare_cds:
+    input: expand("outputs/bakta_assemblies_sigs/{acc}.sig", acc = ACC)
+    output: 
+        comp = "outputs/bakta_assemblies_compare/comp",
+        csv = "outputs/bakta_assemblies_compare/comp.csv"
+    conda: "envs/sourmash.yml"
+    resources:  
+        mem_mb=15000,
+        tmpdir=TMPDIR
+    threads: 1
+    shell:'''
+    sourmash compare -o {output.comp} --csv {output.csv} {input}
+    '''
+
+# rule mantel_test:
