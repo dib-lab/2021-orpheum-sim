@@ -253,7 +253,38 @@ json_long_pct <- json_long_pct %>%
   group_by(accession_minus_prefix, type, set, species, plot_order, measurement2) %>%
   summarize(pct2 = sum(pct))
 
-cds_noncds_gtdb_nongtdb_plt <- ggplot(json_long_pct %>% mutate(species = gsub(".__", "", species)), 
+
+
+
+# plot Genome in GTDB set
+cds_noncds_gtdb_plt <- ggplot(json_long_pct %>% 
+         mutate(species = gsub(".__", "", species)) %>% 
+         filter(set == "gtdb_representatives"), 
+       aes(x = reorder(species, plot_order), y = pct2, label = round(pct2, digits = 0), fill = measurement2)) +
+  geom_col() +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(face = "italic", size = 6),
+        axis.title.y = element_text(size = 7),
+        legend.title = element_text(size = 7),
+        legend.text = element_text(size = 6),
+        strip.text = element_text(face = "bold")) +
+  geom_text(size = 2, position = position_stack(vjust = 0.5)) + 
+  coord_flip() +
+  labs(x = "species", y = "percent of reads", fill = "read type") +
+  facet_grid(~ set ~ type, scales = "free", space = "free", 
+             labeller = as_labeller(c(cds = "Coding", noncds = "Non-coding", 
+                                      gtdb_representatives = "Genome in GTDB",
+                                      refseq_not_in_gtdb = "Genome not in GTDB"))) +
+  scale_fill_brewer(palette = "Dark2", labels = c("Coding", "Non-coding", "Other")) +
+  guides(fill = guide_legend(nrow = 4))
+
+# plot Genome not in GTDB set
+cds_noncds_nongtdb_plt <- ggplot(json_long_pct %>% 
+         mutate(species = gsub(".__", "", species)) %>% 
+         filter(set == "refseq_not_in_gtdb"), 
        aes(x = reorder(species, plot_order), y = pct2, label = round(pct2, digits = 0), fill = measurement2)) +
   geom_col() +
   theme_minimal() +
@@ -263,18 +294,28 @@ cds_noncds_gtdb_nongtdb_plt <- ggplot(json_long_pct %>% mutate(species = gsub(".
         axis.title = element_text(size = 7),
         legend.title = element_text(size = 7),
         legend.text = element_text(size = 6),
-        strip.text = element_text(size = 7),
-        panel.spacing = unit(.1, "lines")) +
+        strip.text.x = element_blank(),
+        strip.text.y = element_text(face = "bold")) +
   geom_text(size = 2, position = position_stack(vjust = 0.5)) + 
   coord_flip() +
   labs(x = "species", y = "percent of reads", fill = "read type") +
-  facet_wrap(~ type + set, scales = "free_y", 
+  facet_grid(~ set ~ type, scales = "free", space = "free", 
              labeller = as_labeller(c(cds = "Coding", noncds = "Non-coding", 
                                       gtdb_representatives = "Genome in GTDB",
                                       refseq_not_in_gtdb = "Genome not in GTDB"))) +
   scale_fill_brewer(palette = "Dark2", labels = c("Coding", "Non-coding", "Other")) +
   guides(fill = guide_legend(nrow = 4))
+
+## combine
+library(cowplot)
+
+legend <- get_legend(cds_noncds_gtdb_plt) # extract the legend from one of the plots
+tmp <- plot_grid(cds_noncds_gtdb_plt + theme(legend.position="none"), 
+                 cds_noncds_nongtdb_plt+ theme(legend.position="none"), 
+                 ncol=1, align='v', rel_heights = c(1.2, 1))
+cds_noncds_gtdb_nongtdb_plt <- plot_grid(tmp, legend, rel_widths = c(6, 1))
 ```
+
 
 ```{r}
 json_long_pct %>% 
@@ -359,7 +400,7 @@ jaccard_tp_plt  <- ggplot(tmp, aes(x = 1-mean_specificity, y = mean_sensitivity,
   geom_point(alpha = .5) +
   xlim(0, 1) + ylim(0, 1) +
   facet_wrap(~closest_classification_level) + 
-  labs(x = "1 - specificity", y = "1 - sensitivity",
+  labs(x = "1 - specificity", y = "sensitivity",
        color = "Rank of closest\nrelative in GTDB") +
   theme_minimal() +
   theme(legend.position = "right",
@@ -375,8 +416,6 @@ tmp %>%
   group_by(closest_classification_level) %>%
   arrange(desc(mean_youden)) %>%
   slice(1)
-
-
 ```
 
 ## Lineage plots
@@ -597,17 +636,154 @@ lineage_plt <- ggplot(thermo_long_pct,
 lineage_plt
 ```
 
+## species vs gtdb plots
+
+```{r import_species_json}
+species_json_files <- Sys.glob("outputs/orpheum_species/*json") 
+species_jsons <- data.frame()
+for(i in 1:length(species_json_files)){
+  db <- species_json_files[i]
+  db <- gsub("outputs\\/orpheum_species\\/GCA_[0-9]{9}\\.[12]{1}-cds-", "", db)
+  db <- gsub("outputs\\/orpheum_species\\/GCA_[0-9]{9}\\.[12]{1}-noncds-", "", db)
+  db <- gsub(".summary.json", "", db)
+
+  species_json <- read_and_format_orpheum_json(sys_glob_path = species_json_files[i],
+                                     database = db, 
+                                     alphabet = "protein",
+                                     ksize = 10)  %>%
+    mutate(sample = gsub("outputs\\/orpheum_species\\/", "", sample)) %>%
+    mutate(sample = gsub("-s__.*", "", sample)) %>%
+    mutate(sample = gsub(".summary.json", "", sample)) %>%
+    separate(sample, into = c("accession", "type"), sep = "-", remove = F) %>%
+    mutate(accession_minus_version = gsub("\\..*", "", accession)) %>%
+    mutate(accession_minus_prefix = gsub("GCA_", "", accession_minus_version)) %>%
+    left_join(info, by = "accession_minus_prefix")
+  
+  species_jsons <- bind_rows(species_jsons, species_json)
+}
+```
+
+```{r species_json_pct}
+species_jsons_pct <- species_jsons %>%
+  select(accession_minus_prefix, type, set, database, total_reads,
+         translation_is_shorter_than_peptide_k_mer_size_1, 
+         translation_frame_has_stop_codon_s, coding, non_coding, low_complexity_nucleotide,
+         read_length_was_shorter_than_3_peptide_k_mer_size, low_complexity_peptide_in_protein20_alphabet) %>%
+  pivot_longer(cols = translation_is_shorter_than_peptide_k_mer_size_1:low_complexity_peptide_in_protein20_alphabet, names_to = "measurement", values_to = "reads") %>%
+  mutate(pct = reads/total_reads * 100)
+
+species_jsons_pct <- species_jsons_pct %>%
+   left_join(gtdbtk)
+
+# change category to "other" for measurements
+species_jsons_pct <- species_jsons_pct %>%
+  mutate(measurement2 = ifelse(measurement %in% c("coding", "non_coding"), measurement, "other")) %>%
+  group_by(accession_minus_prefix, type, set, species, measurement2, database) %>%
+  summarize(pct2 = sum(pct))
+```
+
+```{r}
+tmp <- species_jsons_pct %>%
+  ungroup() %>%
+  select(species, type,set, measurement2, species_pct = pct2)
+
+tmp2 <- json_long_pct %>%
+  ungroup() %>%
+  select(species, type, set, measurement2, gtdb_pct = pct2)
+
+tmp <- left_join(tmp, tmp2)
+
+tmp_long <- tmp %>% 
+  filter(type == "cds") %>% 
+  filter(measurement2 == "coding") %>%
+  select(species, species_pct, gtdb_pct) %>%
+  pivot_longer(cols = -species) %>%
+  mutate(name = gsub("species_pct", "species database", name),
+         name = gsub("gtdb_pct", "GTDB rs202 database", name))
+
+bxp <- ggpaired(data = tmp_long, x = "name", y = "value", id = "species",
+                line.color = "lightgrey", xlab = "database", ylab = "percent CDS reads\npredicted as coding")
+library(rstatix)
+stat_test <- tmp_long  %>% 
+  t_test(value ~ name, paired = TRUE) %>%
+  add_significance()
+stat_test
+
+stat_test <- stat_test %>% add_xy_position(x = "name")
+pdf("orpheum_supp1.pdf", height = 3, width = 4)
+bxp + 
+  stat_pvalue_manual(stat_test, tip.length = 0) +
+  labs(subtitle = get_test_label(stat_test, detailed= TRUE)) +
+  theme_minimal() 
+dev.off()
+```
 
 ## combine plots
 
 
 ```{r}
-pdf("orpheum_fig.pdf", height = 8, width = 6.5)
+pdf("orpheum_fig.pdf", height = 6.5, width = 6.5)
 ggarrange(cds_noncds_gtdb_nongtdb_plt, 
           ggarrange(refseq_gtdbtk_plt, jaccard_tp_plt, 
                     labels = c("B", "C"), ncol = 2, widths = c(3, 4)),
           nrow = 2, labels = c("A", ""), heights = c(2, 1))
 dev.off()
+```
+
+## pseudogene results
+
+```{r pseudo}
+pseudo <- Sys.glob("outputs/noncds_pseudogenes/gtdb-rs202/protein-k10/*summary.tsv") %>%
+  map_dfr(read_tsv) %>%
+  mutate(pct = (noncds_predicted_as_coding_in_pseudogenes/noncds_predicted_as_coding)*100) 
+
+pseudo <- pseudo %>%
+  summarise(mean_pct = mean(pct), 
+            sd_pct = sd(pct),
+            mean_reads = mean(noncds_predicted_as_coding_in_pseudogenes), 
+            sd_reads = sd(noncds_predicted_as_coding_in_pseudogenes))
+```
+
+## Sourmash compare & mantel test
+
+```{r}
+library(vegan)
+
+comp_orph <- read_csv("outputs/orpheum_compare/gtdb-rs202/protein-k10/comp.csv")
+comp_bakta <- read_csv("outputs/bakta_assemblies_compare/comp.csv")
+
+mean(as.matrix(comp_bakta), na.rm =T)
+mean(as.matrix(comp_orph), na.rm =T)
+tmp <- mantel(comp_orph, comp_bakta)
+differences <- comp_bakta - comp_orph
+mean(as.matrix(differences), na.rm = T) * 100
+```
+
+## stat coding as noncoding
+
+```{r}
+cds_as_coding <-  Sys.glob("outputs/cds_as_coding_bwa/gtdb-rs202/protein-k10/*stat") %>%
+  set_names() %>%
+  map_dfr(read_tsv, col_names = c("stat", "value", "comment"), col_types = "cc", .id = "accession") %>%
+  mutate(value = as.numeric(gsub("\t.*", "", value))) %>%
+  mutate(accession = gsub("outputs/cds_as_coding_bwa/gtdb-rs202/protein-k10/", "", accession)) %>%
+  mutate(accession = gsub(".[12]_.*", "", accession)) %>%
+  mutate(stat = gsub(":", "", stat)) %>%
+  filter(stat == "error rate") %>%
+  select(accession, stat, coding_value = value)
+
+cds_as_noncoding <- Sys.glob("outputs/cds_as_noncoding_bwa/gtdb-rs202/protein-k10/*stat") %>%
+  set_names() %>%
+  map_dfr(read_tsv, col_names = c("stat", "value", "comment"), col_types = "cc", .id = "accession") %>%
+  mutate(value = as.numeric(gsub("\t.*", "", value))) %>%
+  mutate(accession = gsub("outputs/cds_as_noncoding_bwa/gtdb-rs202/protein-k10/", "", accession)) %>%
+  mutate(accession = gsub(".[12]_.*", "", accession)) %>%
+  mutate(stat = gsub(":", "", stat)) %>%
+  filter(stat == "error rate") %>%
+  select(accession, stat, noncoding_value = value)
+
+error_rate <- left_join(cds_as_coding, cds_as_noncoding)
+t.test(error_rate$coding_value, error_rate$noncoding_value)
 ```
 
 ## Conclusion
